@@ -22,6 +22,14 @@ function setPlaybackButtonLabel(label) {
   }
 }
 
+function setCameraModeButtonLabel(label) {
+  const cameraModeButton = document.getElementById("cameraModeButton");
+
+  if (cameraModeButton) {
+    cameraModeButton.textContent = label;
+  }
+}
+
 function setTextContent(elementId, value) {
   const element = document.getElementById(elementId);
 
@@ -109,6 +117,12 @@ function createPlaybackState(trackpoints) {
     markerEntity: null,
     progressEntity: null,
     routePositions: [],
+    camera: {
+      mode: "follow",
+      smoothedDestination: null,
+      smoothedTarget: null,
+      routeEntity: null,
+    },
   };
 }
 
@@ -210,6 +224,140 @@ async function frameRoute(viewer, routeEntity) {
       1800,
     ),
   );
+}
+
+function getLookAheadTrackpoint(playbackState, lookAheadPointCount = 12) {
+  return playbackState.trackpoints[
+    Math.min(
+      playbackState.currentIndex + lookAheadPointCount,
+      playbackState.trackpoints.length - 1,
+    )
+  ];
+}
+
+function resetFollowCameraSmoothing(playbackState) {
+  playbackState.camera.smoothedDestination = null;
+  playbackState.camera.smoothedTarget = null;
+}
+
+function updateCameraUI(playbackState) {
+  const isFollowMode = playbackState.camera.mode === "follow";
+
+  setTextContent(
+    "cameraModeStatus",
+    isFollowMode ? "Follow camera" : "Overview camera",
+  );
+  setCameraModeButtonLabel(
+    isFollowMode ? "Switch to overview" : "Switch to follow",
+  );
+}
+
+function updateFollowCamera(viewer, playbackState) {
+  const Cesium = window.Cesium;
+
+  if (playbackState.camera.mode !== "follow") {
+    return;
+  }
+
+  const currentPosition = toCartesianPosition(Cesium, playbackState.currentSample);
+  const lookAheadTrackpoint = getLookAheadTrackpoint(playbackState);
+  const lookAheadPosition = toCartesianPosition(Cesium, lookAheadTrackpoint);
+  const ellipsoid = viewer.scene.globe.ellipsoid;
+  const up = ellipsoid.geodeticSurfaceNormal(
+    currentPosition,
+    new Cesium.Cartesian3(),
+  );
+  const rawForward = Cesium.Cartesian3.subtract(
+    lookAheadPosition,
+    currentPosition,
+    new Cesium.Cartesian3(),
+  );
+
+  if (Cesium.Cartesian3.magnitudeSquared(rawForward) === 0) {
+    return;
+  }
+
+  const forward = Cesium.Cartesian3.normalize(
+    rawForward,
+    new Cesium.Cartesian3(),
+  );
+  const right = Cesium.Cartesian3.cross(
+    forward,
+    up,
+    new Cesium.Cartesian3(),
+  );
+
+  if (Cesium.Cartesian3.magnitudeSquared(right) === 0) {
+    return;
+  }
+
+  const tangentForward = Cesium.Cartesian3.normalize(
+    Cesium.Cartesian3.cross(up, right, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+  const desiredDestination = Cesium.Cartesian3.add(
+    Cesium.Cartesian3.add(
+      currentPosition,
+      Cesium.Cartesian3.multiplyByScalar(
+        tangentForward,
+        -150,
+        new Cesium.Cartesian3(),
+      ),
+      new Cesium.Cartesian3(),
+    ),
+    Cesium.Cartesian3.multiplyByScalar(up, 95, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+  const desiredTarget = Cesium.Cartesian3.add(
+    Cesium.Cartesian3.add(
+      currentPosition,
+      Cesium.Cartesian3.multiplyByScalar(
+        tangentForward,
+        80,
+        new Cesium.Cartesian3(),
+      ),
+      new Cesium.Cartesian3(),
+    ),
+    Cesium.Cartesian3.multiplyByScalar(up, 18, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+
+  if (!playbackState.camera.smoothedDestination) {
+    playbackState.camera.smoothedDestination = Cesium.Cartesian3.clone(
+      desiredDestination,
+    );
+    playbackState.camera.smoothedTarget = Cesium.Cartesian3.clone(desiredTarget);
+  } else {
+    Cesium.Cartesian3.lerp(
+      playbackState.camera.smoothedDestination,
+      desiredDestination,
+      0.14,
+      playbackState.camera.smoothedDestination,
+    );
+    Cesium.Cartesian3.lerp(
+      playbackState.camera.smoothedTarget,
+      desiredTarget,
+      0.18,
+      playbackState.camera.smoothedTarget,
+    );
+  }
+
+  const direction = Cesium.Cartesian3.normalize(
+    Cesium.Cartesian3.subtract(
+      playbackState.camera.smoothedTarget,
+      playbackState.camera.smoothedDestination,
+      new Cesium.Cartesian3(),
+    ),
+    new Cesium.Cartesian3(),
+  );
+
+  viewer.camera.setView({
+    destination: playbackState.camera.smoothedDestination,
+    orientation: {
+      direction,
+      up,
+    },
+  });
 }
 
 function createViewer() {
@@ -391,11 +539,13 @@ function updatePlaybackUI(playbackState) {
   setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
 }
 
-function syncPlaybackState(playbackState) {
+function syncPlaybackState(viewer, playbackState) {
   advancePlaybackIndex(playbackState);
   interpolateTrackpoint(playbackState);
   updateMarkerPosition(playbackState);
+  updateFollowCamera(viewer, playbackState);
   updatePlaybackUI(playbackState);
+  updateCameraUI(playbackState);
 }
 
 function stopPlayback(playbackState) {
@@ -405,7 +555,7 @@ function stopPlayback(playbackState) {
   }
 }
 
-function tickPlayback(playbackState, frameTime) {
+function tickPlayback(viewer, playbackState, frameTime) {
   if (!playbackState.isPlaying) {
     playbackState.animationFrameId = null;
     return;
@@ -422,7 +572,7 @@ function tickPlayback(playbackState, frameTime) {
     playbackState.currentTimestamp + deltaMs * playbackState.speedMultiplier,
   );
 
-  syncPlaybackState(playbackState);
+  syncPlaybackState(viewer, playbackState);
 
   if (playbackState.currentTimestamp >= playbackState.endTimestamp) {
     playbackState.isPlaying = false;
@@ -433,11 +583,11 @@ function tickPlayback(playbackState, frameTime) {
   }
 
   playbackState.animationFrameId = window.requestAnimationFrame((nextFrameTime) =>
-    tickPlayback(playbackState, nextFrameTime),
+    tickPlayback(viewer, playbackState, nextFrameTime),
   );
 }
 
-function startPlayback(playbackState) {
+function startPlayback(viewer, playbackState) {
   if (playbackState.isPlaying && playbackState.animationFrameId !== null) {
     return;
   }
@@ -446,7 +596,7 @@ function startPlayback(playbackState) {
   playbackState.lastFrameTime = null;
   updatePlaybackUI(playbackState);
   playbackState.animationFrameId = window.requestAnimationFrame((frameTime) =>
-    tickPlayback(playbackState, frameTime),
+    tickPlayback(viewer, playbackState, frameTime),
   );
 }
 
@@ -457,18 +607,36 @@ function pausePlayback(playbackState) {
   updatePlaybackUI(playbackState);
 }
 
-function restartPlayback(playbackState) {
+function restartPlayback(viewer, playbackState) {
   playbackState.currentTimestamp = playbackState.startTimestamp;
   playbackState.currentIndex = 0;
   playbackState.currentSample = playbackState.trackpoints[0];
   playbackState.lastFrameTime = null;
-  syncPlaybackState(playbackState);
-  startPlayback(playbackState);
+  resetFollowCameraSmoothing(playbackState);
+  syncPlaybackState(viewer, playbackState);
+  startPlayback(viewer, playbackState);
 }
 
-function setupPlaybackControls(playbackState) {
+function switchCameraMode(viewer, playbackState) {
+  if (playbackState.camera.mode === "follow") {
+    playbackState.camera.mode = "overview";
+    resetFollowCameraSmoothing(playbackState);
+    if (playbackState.camera.routeEntity) {
+      void frameRoute(viewer, playbackState.camera.routeEntity);
+    }
+  } else {
+    playbackState.camera.mode = "follow";
+    resetFollowCameraSmoothing(playbackState);
+    updateFollowCamera(viewer, playbackState);
+  }
+
+  updateCameraUI(playbackState);
+}
+
+function setupPlaybackControls(viewer, playbackState) {
   const playPauseButton = document.getElementById("playPauseButton");
   const restartButton = document.getElementById("restartButton");
+  const cameraModeButton = document.getElementById("cameraModeButton");
 
   playPauseButton?.addEventListener("click", () => {
     if (playbackState.isPlaying) {
@@ -476,11 +644,15 @@ function setupPlaybackControls(playbackState) {
       return;
     }
 
-    startPlayback(playbackState);
+    startPlayback(viewer, playbackState);
   });
 
   restartButton?.addEventListener("click", () => {
-    restartPlayback(playbackState);
+    restartPlayback(viewer, playbackState);
+  });
+
+  cameraModeButton?.addEventListener("click", () => {
+    switchCameraMode(viewer, playbackState);
   });
 }
 
@@ -492,25 +664,28 @@ async function initializeApp() {
     const playbackState = createPlaybackState(sampleTrack.trackpoints);
     const { routeEntity, routePositions } = addRouteEntities(viewer, sampleTrack);
     playbackState.routePositions = routePositions;
+    playbackState.camera.routeEntity = routeEntity;
     addPlaybackEntities(viewer, playbackState);
-    syncPlaybackState(playbackState);
+    renderSummary(sampleTrack);
+    syncPlaybackState(viewer, playbackState);
     await frameRoute(viewer, routeEntity);
+    updateFollowCamera(viewer, playbackState);
 
     window.bikeFlyOverViewer = viewer;
     window.sampleTrack = sampleTrack;
     window.sampleRouteEntity = routeEntity;
     window.playbackState = playbackState;
 
-    renderSummary(sampleTrack);
     updatePlaybackUI(playbackState);
-    setupPlaybackControls(playbackState);
-    startPlayback(playbackState);
+    updateCameraUI(playbackState);
+    setupPlaybackControls(viewer, playbackState);
+    startPlayback(viewer, playbackState);
     console.log("BikeFlyOver sample track summary:", sampleTrack.summary);
     setRouteStatus(
       `Highlighted ${sampleTrack.summary.pointCount.toLocaleString()} points in 3D.`,
     );
     setStatus(
-      `Playing ${sampleTrack.fileName} over the highlighted 3D route.`,
+      `Following ${sampleTrack.fileName} with a trailing 3D camera.`,
     );
     window.bikeFlyOverApp?.notifyReady();
   } catch (error) {

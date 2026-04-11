@@ -17,7 +17,7 @@
       <header class="app-header">
         <div>
           <p class="eyebrow">BikeFlyOver</p>
-          <h1>Phase 4 - Playback and moving marker</h1>
+          <h1>Phase 5 - Follow camera</h1>
         </div>
         <p id="status" class="status">Initializing Cesium...</p>
       </header>
@@ -76,6 +76,18 @@
               <div>
                 <dt>Speed</dt>
                 <dd id="playbackSpeed">-</dd>
+              </div>
+            </dl>
+          </section>
+          <section class="controls-panel" aria-label="Camera controls">
+            <h2>Camera</h2>
+            <div class="button-row">
+              <button id="cameraModeButton" type="button">Switch to overview</button>
+            </div>
+            <dl class="summary-list summary-list--compact">
+              <div>
+                <dt>Mode</dt>
+                <dd id="cameraModeStatus">Loading...</dd>
               </div>
             </dl>
           </section>

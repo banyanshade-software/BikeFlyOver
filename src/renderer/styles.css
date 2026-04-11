@@ -105,6 +105,10 @@ body {
   outline-offset: 2px;
 }
 
+.button-row button:active {
+  transform: translateY(1px);
+}
+
 .summary-list {
   display: grid;
   gap: 0.85rem;
