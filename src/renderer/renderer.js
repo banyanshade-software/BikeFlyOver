@@ -80,6 +80,15 @@ function buildRoutePositions(Cesium, trackpoints) {
   );
 }
 
+function createBaseLayer(Cesium) {
+  return new Cesium.ImageryLayer(
+    new Cesium.OpenStreetMapImageryProvider({
+      url: "https://tile.openstreetmap.org/",
+      credit: "OpenStreetMap contributors",
+    }),
+  );
+}
+
 function addRouteEntities(viewer, sampleTrack) {
   const Cesium = window.Cesium;
   const { trackpoints } = sampleTrack;
@@ -160,6 +169,7 @@ function createViewer() {
 
   const viewer = new Cesium.Viewer("cesiumContainer", {
     animation: false,
+    baseLayer: createBaseLayer(Cesium),
     baseLayerPicker: false,
     fullscreenButton: false,
     geocoder: false,
@@ -170,14 +180,16 @@ function createViewer() {
     selectionIndicator: false,
     timeline: false,
     terrainProvider: new Cesium.EllipsoidTerrainProvider(),
-    imageryProvider: new Cesium.OpenStreetMapImageryProvider({
-      url: "https://tile.openstreetmap.org/",
-      credit: "OpenStreetMap contributors",
-    }),
   });
 
   viewer.scene.globe.enableLighting = true;
   viewer.scene.globe.depthTestAgainstTerrain = false;
+  viewer.imageryLayers.get(0)?.imageryProvider.errorEvent.addEventListener(
+    (tileProviderError) => {
+      console.error("Base imagery failed to load:", tileProviderError);
+      setRouteStatus("Base map tiles failed to load.");
+    },
+  );
 
   return viewer;
 }
