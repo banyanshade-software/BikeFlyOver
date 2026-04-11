@@ -523,6 +523,10 @@ function stopPlayback(playbackState) {
   }
 }
 
+function stopCameraMotion(viewer) {
+  viewer.camera.cancelFlight();
+}
+
 function tickPlayback(viewer, playbackState, frameTime) {
   if (!playbackState.isPlaying) {
     playbackState.animationFrameId = null;
@@ -568,10 +572,11 @@ function startPlayback(viewer, playbackState) {
   );
 }
 
-function pausePlayback(playbackState) {
+function pausePlayback(viewer, playbackState) {
   playbackState.isPlaying = false;
   playbackState.lastFrameTime = null;
   stopPlayback(playbackState);
+  stopCameraMotion(viewer);
   updatePlaybackUI(playbackState);
 }
 
@@ -608,7 +613,7 @@ function setupPlaybackControls(viewer, playbackState) {
 
   playPauseButton?.addEventListener("click", () => {
     if (playbackState.isPlaying) {
-      pausePlayback(playbackState);
+      pausePlayback(viewer, playbackState);
       return;
     }
 
