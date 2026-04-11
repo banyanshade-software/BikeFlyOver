@@ -81,12 +81,22 @@ function buildRoutePositions(Cesium, trackpoints) {
 }
 
 function createBaseLayer(Cesium) {
-  return new Cesium.ImageryLayer(
-    new Cesium.OpenStreetMapImageryProvider({
-      url: "https://tile.openstreetmap.org/",
-      credit: "OpenStreetMap contributors",
-    }),
+  const baseLayer = Cesium.ImageryLayer.fromProviderAsync(
+    Cesium.ArcGisMapServerImageryProvider.fromBasemapType(
+      Cesium.ArcGisBaseMapType.SATELLITE,
+    ),
   );
+
+  baseLayer.readyEvent.addEventListener(() => {
+    setRouteStatus("Satellite basemap loaded.");
+  });
+
+  baseLayer.errorEvent.addEventListener((error) => {
+    console.error("Base imagery failed to load:", error);
+    setRouteStatus("Satellite basemap failed to load.");
+  });
+
+  return baseLayer;
 }
 
 function addRouteEntities(viewer, sampleTrack) {
@@ -184,18 +194,13 @@ function createViewer() {
 
   viewer.scene.globe.enableLighting = true;
   viewer.scene.globe.depthTestAgainstTerrain = false;
-  viewer.imageryLayers.get(0)?.imageryProvider.errorEvent.addEventListener(
-    (tileProviderError) => {
-      console.error("Base imagery failed to load:", tileProviderError);
-      setRouteStatus("Base map tiles failed to load.");
-    },
-  );
 
   return viewer;
 }
 
 async function initializeApp() {
   try {
+    setRouteStatus("Loading satellite basemap...");
     const viewer = createViewer();
     const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
     const routeEntity = addRouteEntities(viewer, sampleTrack);
