@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and local config
+.env
+.env.*
+!.env.example
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Test and tool caches
+.cache/
+.eslintcache
+.parcel-cache/
+.turbo/
+.nyc_output/
+playwright-report/
+test-results/
+
+# Electron packaging artifacts
+release/
+
+# Python caches if helper scripts are added
+__pycache__/
+*.py[cod]
