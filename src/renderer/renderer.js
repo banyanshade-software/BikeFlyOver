@@ -6,6 +6,14 @@ function setStatus(message) {
   }
 }
 
+function setRouteStatus(message) {
+  const routeStatusElement = document.getElementById("routeStatus");
+
+  if (routeStatusElement) {
+    routeStatusElement.textContent = message;
+  }
+}
+
 function formatTimestamp(timestamp) {
   return new Date(timestamp).toLocaleString();
 }
@@ -55,7 +63,92 @@ function renderSummary(sampleTrack) {
       <dt>Altitude</dt>
       <dd>${formatAltitude(summary.bounds)}</dd>
     </div>
+    <div>
+      <dt>Route</dt>
+      <dd id="routeStatus">Waiting for render...</dd>
+    </div>
   `;
+}
+
+function buildRoutePositions(Cesium, trackpoints) {
+  return trackpoints.map((trackpoint) =>
+    Cesium.Cartesian3.fromDegrees(
+      trackpoint.longitude,
+      trackpoint.latitude,
+      trackpoint.altitude,
+    ),
+  );
+}
+
+function addRouteEntities(viewer, sampleTrack) {
+  const Cesium = window.Cesium;
+  const { trackpoints } = sampleTrack;
+  const routePositions = buildRoutePositions(Cesium, trackpoints);
+  const startTrackpoint = trackpoints[0];
+  const endTrackpoint = trackpoints[trackpoints.length - 1];
+
+  const routeEntity = viewer.entities.add({
+    id: "sample-route",
+    name: "Sample TCX route",
+    polyline: {
+      positions: routePositions,
+      width: 7,
+      clampToGround: false,
+      material: new Cesium.PolylineGlowMaterialProperty({
+        color: Cesium.Color.fromCssColorString("#43d9ff"),
+        glowPower: 0.22,
+      }),
+    },
+  });
+
+  viewer.entities.add({
+    id: "route-start",
+    name: "Route start",
+    position: Cesium.Cartesian3.fromDegrees(
+      startTrackpoint.longitude,
+      startTrackpoint.latitude,
+      startTrackpoint.altitude,
+    ),
+    point: {
+      pixelSize: 13,
+      color: Cesium.Color.fromCssColorString("#6dff8a"),
+      outlineColor: Cesium.Color.fromCssColorString("#062032"),
+      outlineWidth: 2,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  });
+
+  viewer.entities.add({
+    id: "route-end",
+    name: "Route end",
+    position: Cesium.Cartesian3.fromDegrees(
+      endTrackpoint.longitude,
+      endTrackpoint.latitude,
+      endTrackpoint.altitude,
+    ),
+    point: {
+      pixelSize: 13,
+      color: Cesium.Color.fromCssColorString("#ff8a5b"),
+      outlineColor: Cesium.Color.fromCssColorString("#062032"),
+      outlineWidth: 2,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  });
+
+  return routeEntity;
+}
+
+async function frameRoute(viewer, routeEntity) {
+  const Cesium = window.Cesium;
+
+  await viewer.zoomTo(
+    routeEntity,
+    new Cesium.HeadingPitchRange(
+      Cesium.Math.toRadians(0),
+      Cesium.Math.toRadians(-55),
+      1800,
+    ),
+  );
 }
 
 function createViewer() {
@@ -84,14 +177,7 @@ function createViewer() {
   });
 
   viewer.scene.globe.enableLighting = true;
-  viewer.camera.setView({
-    destination: Cesium.Cartesian3.fromDegrees(1.4289, 43.6125, 6000),
-    orientation: {
-      heading: Cesium.Math.toRadians(20),
-      pitch: Cesium.Math.toRadians(-40),
-      roll: 0,
-    },
-  });
+  viewer.scene.globe.depthTestAgainstTerrain = false;
 
   return viewer;
 }
@@ -100,14 +186,20 @@ async function initializeApp() {
   try {
     const viewer = createViewer();
     const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
+    const routeEntity = addRouteEntities(viewer, sampleTrack);
+    await frameRoute(viewer, routeEntity);
 
     window.bikeFlyOverViewer = viewer;
     window.sampleTrack = sampleTrack;
+    window.sampleRouteEntity = routeEntity;
 
     renderSummary(sampleTrack);
     console.log("BikeFlyOver sample track summary:", sampleTrack.summary);
+    setRouteStatus(
+      `Highlighted ${sampleTrack.summary.pointCount.toLocaleString()} points in 3D.`,
+    );
     setStatus(
-      `Loaded ${sampleTrack.summary.pointCount.toLocaleString()} trackpoints from ${sampleTrack.fileName}.`,
+      `Loaded and framed ${sampleTrack.fileName} with a highlighted 3D route.`,
     );
     window.bikeFlyOverApp?.notifyReady();
   } catch (error) {
