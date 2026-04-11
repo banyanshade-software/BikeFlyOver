@@ -21,7 +21,8 @@
   },
   "homepage": "https://github.com/banyanshade-software/BikeFlyOver#readme",
   "dependencies": {
-    "cesium": "^1.140.0"
+    "cesium": "^1.140.0",
+    "fast-xml-parser": "^5.5.11"
   },
   "devDependencies": {
     "electron": "^41.2.0"

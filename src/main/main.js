@@ -3,6 +3,10 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 
 const isSmokeTest = process.argv.includes("--smoke-test");
 
+if (isSmokeTest) {
+  app.disableHardwareAcceleration();
+}
+
 function createMainWindow() {
   const mainWindow = new BrowserWindow({
     width: 1440,
@@ -42,7 +46,7 @@ function createMainWindow() {
 
 app.whenReady().then(() => {
   ipcMain.once("renderer-ready", () => {
-    console.log("BikeFlyOver Phase 1 renderer ready.");
+    console.log("BikeFlyOver renderer ready.");
 
     if (isSmokeTest) {
       setTimeout(() => {

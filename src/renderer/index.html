@@ -17,11 +17,40 @@
       <header class="app-header">
         <div>
           <p class="eyebrow">BikeFlyOver</p>
-          <h1>Phase 1 - Cesium viewer shell</h1>
+          <h1>Phase 2 - Sample TCX parsing</h1>
         </div>
         <p id="status" class="status">Initializing Cesium...</p>
       </header>
       <main class="viewer-layout">
+        <aside class="summary-panel" aria-label="Track summary">
+          <h2>Sample activity</h2>
+          <dl id="summaryList" class="summary-list">
+            <div>
+              <dt>File</dt>
+              <dd>Loading...</dd>
+            </div>
+            <div>
+              <dt>Trackpoints</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>Start</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>End</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>Bounds</dt>
+              <dd>-</dd>
+            </div>
+            <div>
+              <dt>Altitude</dt>
+              <dd>-</dd>
+            </div>
+          </dl>
+        </aside>
         <section id="cesiumContainer" class="viewer-panel" aria-label="Cesium viewer"></section>
       </main>
     </div>
