@@ -4,7 +4,8 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const isSmokeTest = process.argv.includes("--smoke-test");
 
 if (isSmokeTest) {
-  app.disableHardwareAcceleration();
+  app.commandLine.appendSwitch("use-angle", "swiftshader");
+  app.commandLine.appendSwitch("enable-unsafe-swiftshader");
 }
 
 function createMainWindow() {
@@ -19,6 +20,7 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: false,
     },
   });
 
