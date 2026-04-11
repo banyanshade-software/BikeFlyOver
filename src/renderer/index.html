@@ -17,7 +17,7 @@
       <header class="app-header">
         <div>
           <p class="eyebrow">BikeFlyOver</p>
-          <h1>Phase 3 - Static route visualization</h1>
+          <h1>Phase 4 - Playback and moving marker</h1>
         </div>
         <p id="status" class="status">Initializing Cesium...</p>
       </header>
@@ -54,6 +54,31 @@
               <dd id="routeStatus">Waiting for render...</dd>
             </div>
           </dl>
+          <section class="controls-panel" aria-label="Playback controls">
+            <h2>Playback</h2>
+            <div class="button-row">
+              <button id="playPauseButton" type="button">Pause</button>
+              <button id="restartButton" type="button">Restart</button>
+            </div>
+            <dl class="summary-list summary-list--compact">
+              <div>
+                <dt>Status</dt>
+                <dd id="playbackStatus">Loading...</dd>
+              </div>
+              <div>
+                <dt>Progress</dt>
+                <dd id="playbackProgress">-</dd>
+              </div>
+              <div>
+                <dt>Current time</dt>
+                <dd id="playbackCurrentTime">-</dd>
+              </div>
+              <div>
+                <dt>Speed</dt>
+                <dd id="playbackSpeed">-</dd>
+              </div>
+            </dl>
+          </section>
         </aside>
         <section id="cesiumContainer" class="viewer-panel" aria-label="Cesium viewer"></section>
       </main>

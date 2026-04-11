@@ -14,6 +14,22 @@ function setRouteStatus(message) {
   }
 }
 
+function setPlaybackButtonLabel(label) {
+  const playPauseButton = document.getElementById("playPauseButton");
+
+  if (playPauseButton) {
+    playPauseButton.textContent = label;
+  }
+}
+
+function setTextContent(elementId, value) {
+  const element = document.getElementById(elementId);
+
+  if (element) {
+    element.textContent = value;
+  }
+}
+
 function formatTimestamp(timestamp) {
   return new Date(timestamp).toLocaleString();
 }
@@ -27,6 +43,10 @@ function formatBounds(bounds) {
 
 function formatAltitude(bounds) {
   return `${bounds.minAltitude.toFixed(1)}m to ${bounds.maxAltitude.toFixed(1)}m`;
+}
+
+function formatProgress(progressRatio) {
+  return `${(progressRatio * 100).toFixed(1)}%`;
 }
 
 function renderSummary(sampleTrack) {
@@ -68,6 +88,28 @@ function renderSummary(sampleTrack) {
       <dd id="routeStatus">Waiting for render...</dd>
     </div>
   `;
+}
+
+function createPlaybackState(trackpoints) {
+  const startTimestamp = trackpoints[0].timestamp;
+  const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
+
+  return {
+    trackpoints,
+    startTimestamp,
+    endTimestamp,
+    durationMs: endTimestamp - startTimestamp,
+    currentTimestamp: startTimestamp,
+    currentIndex: 0,
+    currentSample: trackpoints[0],
+    isPlaying: true,
+    speedMultiplier: 240,
+    lastFrameTime: null,
+    animationFrameId: null,
+    markerEntity: null,
+    progressEntity: null,
+    routePositions: [],
+  };
 }
 
 function buildRoutePositions(Cesium, trackpoints) {
@@ -154,7 +196,7 @@ function addRouteEntities(viewer, sampleTrack) {
     },
   });
 
-  return routeEntity;
+  return { routeEntity, routePositions };
 }
 
 async function frameRoute(viewer, routeEntity) {
@@ -198,25 +240,277 @@ function createViewer() {
   return viewer;
 }
 
+function advancePlaybackIndex(playbackState) {
+  const { trackpoints } = playbackState;
+
+  while (
+    playbackState.currentIndex < trackpoints.length - 2 &&
+    trackpoints[playbackState.currentIndex + 1].timestamp <=
+      playbackState.currentTimestamp
+  ) {
+    playbackState.currentIndex += 1;
+  }
+
+  while (
+    playbackState.currentIndex > 0 &&
+    trackpoints[playbackState.currentIndex].timestamp >
+      playbackState.currentTimestamp
+  ) {
+    playbackState.currentIndex -= 1;
+  }
+}
+
+function interpolateTrackpoint(playbackState) {
+  const { currentIndex, currentTimestamp, trackpoints } = playbackState;
+  const startTrackpoint = trackpoints[currentIndex];
+  const endTrackpoint =
+    trackpoints[Math.min(currentIndex + 1, trackpoints.length - 1)];
+
+  if (startTrackpoint.timestamp === endTrackpoint.timestamp) {
+    playbackState.currentSample = {
+      ...startTrackpoint,
+      timestamp: currentTimestamp,
+    };
+    return;
+  }
+
+  const segmentRatio = Math.min(
+    1,
+    Math.max(
+      0,
+      (currentTimestamp - startTrackpoint.timestamp) /
+        (endTrackpoint.timestamp - startTrackpoint.timestamp),
+    ),
+  );
+
+  playbackState.currentSample = {
+    time: new Date(currentTimestamp).toISOString(),
+    timestamp: currentTimestamp,
+    latitude:
+      startTrackpoint.latitude +
+      (endTrackpoint.latitude - startTrackpoint.latitude) * segmentRatio,
+    longitude:
+      startTrackpoint.longitude +
+      (endTrackpoint.longitude - startTrackpoint.longitude) * segmentRatio,
+    altitude:
+      startTrackpoint.altitude +
+      (endTrackpoint.altitude - startTrackpoint.altitude) * segmentRatio,
+    distance:
+      startTrackpoint.distance === null || endTrackpoint.distance === null
+        ? null
+        : startTrackpoint.distance +
+          (endTrackpoint.distance - startTrackpoint.distance) * segmentRatio,
+    speed:
+      startTrackpoint.speed === null || endTrackpoint.speed === null
+        ? null
+        : startTrackpoint.speed +
+          (endTrackpoint.speed - startTrackpoint.speed) * segmentRatio,
+  };
+}
+
+function toCartesianPosition(Cesium, trackpoint) {
+  return Cesium.Cartesian3.fromDegrees(
+    trackpoint.longitude,
+    trackpoint.latitude,
+    trackpoint.altitude,
+  );
+}
+
+function buildPlayedRoutePositions(Cesium, playbackState) {
+  const playedPositions = playbackState.routePositions.slice(
+    0,
+    playbackState.currentIndex + 1,
+  );
+
+  if (playbackState.currentSample) {
+    playedPositions.push(toCartesianPosition(Cesium, playbackState.currentSample));
+  }
+
+  return playedPositions;
+}
+
+function addPlaybackEntities(viewer, playbackState) {
+  const Cesium = window.Cesium;
+
+  const markerEntity = viewer.entities.add({
+    id: "current-position-marker",
+    name: "Current position",
+    position: toCartesianPosition(Cesium, playbackState.currentSample),
+    point: {
+      pixelSize: 16,
+      color: Cesium.Color.fromCssColorString("#ffe56a"),
+      outlineColor: Cesium.Color.fromCssColorString("#062032"),
+      outlineWidth: 3,
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+  });
+
+  const progressEntity = viewer.entities.add({
+    id: "played-route",
+    name: "Played route",
+    polyline: {
+      positions: new Cesium.CallbackProperty(() => {
+        return buildPlayedRoutePositions(Cesium, playbackState);
+      }, false),
+      width: 9,
+      clampToGround: false,
+      material: new Cesium.PolylineGlowMaterialProperty({
+        color: Cesium.Color.fromCssColorString("#ffe56a"),
+        glowPower: 0.18,
+      }),
+    },
+  });
+
+  playbackState.markerEntity = markerEntity;
+  playbackState.progressEntity = progressEntity;
+}
+
+function updateMarkerPosition(playbackState) {
+  const Cesium = window.Cesium;
+
+  if (playbackState.markerEntity) {
+    playbackState.markerEntity.position = toCartesianPosition(
+      Cesium,
+      playbackState.currentSample,
+    );
+  }
+}
+
+function updatePlaybackUI(playbackState) {
+  const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
+  const progressRatio =
+    playbackState.durationMs === 0 ? 1 : elapsedMs / playbackState.durationMs;
+
+  setTextContent("playbackStatus", playbackState.isPlaying ? "Playing" : "Paused");
+  setTextContent("playbackProgress", formatProgress(progressRatio));
+  setTextContent(
+    "playbackCurrentTime",
+    formatTimestamp(playbackState.currentSample.time),
+  );
+  setTextContent("playbackSpeed", `${playbackState.speedMultiplier}x track time`);
+  setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
+}
+
+function syncPlaybackState(playbackState) {
+  advancePlaybackIndex(playbackState);
+  interpolateTrackpoint(playbackState);
+  updateMarkerPosition(playbackState);
+  updatePlaybackUI(playbackState);
+}
+
+function stopPlayback(playbackState) {
+  if (playbackState.animationFrameId !== null) {
+    window.cancelAnimationFrame(playbackState.animationFrameId);
+    playbackState.animationFrameId = null;
+  }
+}
+
+function tickPlayback(playbackState, frameTime) {
+  if (!playbackState.isPlaying) {
+    playbackState.animationFrameId = null;
+    return;
+  }
+
+  if (playbackState.lastFrameTime === null) {
+    playbackState.lastFrameTime = frameTime;
+  }
+
+  const deltaMs = frameTime - playbackState.lastFrameTime;
+  playbackState.lastFrameTime = frameTime;
+  playbackState.currentTimestamp = Math.min(
+    playbackState.endTimestamp,
+    playbackState.currentTimestamp + deltaMs * playbackState.speedMultiplier,
+  );
+
+  syncPlaybackState(playbackState);
+
+  if (playbackState.currentTimestamp >= playbackState.endTimestamp) {
+    playbackState.isPlaying = false;
+    playbackState.lastFrameTime = null;
+    updatePlaybackUI(playbackState);
+    playbackState.animationFrameId = null;
+    return;
+  }
+
+  playbackState.animationFrameId = window.requestAnimationFrame((nextFrameTime) =>
+    tickPlayback(playbackState, nextFrameTime),
+  );
+}
+
+function startPlayback(playbackState) {
+  if (playbackState.isPlaying && playbackState.animationFrameId !== null) {
+    return;
+  }
+
+  playbackState.isPlaying = true;
+  playbackState.lastFrameTime = null;
+  updatePlaybackUI(playbackState);
+  playbackState.animationFrameId = window.requestAnimationFrame((frameTime) =>
+    tickPlayback(playbackState, frameTime),
+  );
+}
+
+function pausePlayback(playbackState) {
+  playbackState.isPlaying = false;
+  playbackState.lastFrameTime = null;
+  stopPlayback(playbackState);
+  updatePlaybackUI(playbackState);
+}
+
+function restartPlayback(playbackState) {
+  playbackState.currentTimestamp = playbackState.startTimestamp;
+  playbackState.currentIndex = 0;
+  playbackState.currentSample = playbackState.trackpoints[0];
+  playbackState.lastFrameTime = null;
+  syncPlaybackState(playbackState);
+  startPlayback(playbackState);
+}
+
+function setupPlaybackControls(playbackState) {
+  const playPauseButton = document.getElementById("playPauseButton");
+  const restartButton = document.getElementById("restartButton");
+
+  playPauseButton?.addEventListener("click", () => {
+    if (playbackState.isPlaying) {
+      pausePlayback(playbackState);
+      return;
+    }
+
+    startPlayback(playbackState);
+  });
+
+  restartButton?.addEventListener("click", () => {
+    restartPlayback(playbackState);
+  });
+}
+
 async function initializeApp() {
   try {
     setRouteStatus("Loading satellite basemap...");
     const viewer = createViewer();
     const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
-    const routeEntity = addRouteEntities(viewer, sampleTrack);
+    const playbackState = createPlaybackState(sampleTrack.trackpoints);
+    const { routeEntity, routePositions } = addRouteEntities(viewer, sampleTrack);
+    playbackState.routePositions = routePositions;
+    addPlaybackEntities(viewer, playbackState);
+    syncPlaybackState(playbackState);
     await frameRoute(viewer, routeEntity);
 
     window.bikeFlyOverViewer = viewer;
     window.sampleTrack = sampleTrack;
     window.sampleRouteEntity = routeEntity;
+    window.playbackState = playbackState;
 
     renderSummary(sampleTrack);
+    updatePlaybackUI(playbackState);
+    setupPlaybackControls(playbackState);
+    startPlayback(playbackState);
     console.log("BikeFlyOver sample track summary:", sampleTrack.summary);
     setRouteStatus(
       `Highlighted ${sampleTrack.summary.pointCount.toLocaleString()} points in 3D.`,
     );
     setStatus(
-      `Loaded and framed ${sampleTrack.fileName} with a highlighted 3D route.`,
+      `Playing ${sampleTrack.fileName} over the highlighted 3D route.`,
     );
     window.bikeFlyOverApp?.notifyReady();
   } catch (error) {
