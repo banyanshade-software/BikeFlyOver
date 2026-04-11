@@ -27,6 +27,7 @@ Thumbs.db
 
 # Test and tool caches
 .cache/
+.npm-cache/
 .eslintcache
 .parcel-cache/
 .turbo/

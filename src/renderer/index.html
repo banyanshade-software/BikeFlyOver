@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>BikeFlyOver POC</title>
+    <link rel="stylesheet" href="../../node_modules/cesium/Build/Cesium/Widgets/widgets.css" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./cesium-bootstrap.js"></script>
+    <script src="../../node_modules/cesium/Build/Cesium/Cesium.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">BikeFlyOver</p>
+          <h1>Phase 1 - Cesium viewer shell</h1>
+        </div>
+        <p id="status" class="status">Initializing Cesium...</p>
+      </header>
+      <main class="viewer-layout">
+        <section id="cesiumContainer" class="viewer-panel" aria-label="Cesium viewer"></section>
+      </main>
+    </div>
+    <script src="./renderer.js"></script>
+  </body>
+</html>

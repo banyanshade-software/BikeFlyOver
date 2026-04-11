@@ -1,0 +1,29 @@
+{
+  "name": "bikeflyover",
+  "version": "1.0.0",
+  "description": "Minimal Electron and Cesium proof of concept for BikeFlyOver",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "smoke": "electron . --smoke-test",
+    "test": "npm run smoke"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/banyanshade-software/BikeFlyOver.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/banyanshade-software/BikeFlyOver/issues"
+  },
+  "homepage": "https://github.com/banyanshade-software/BikeFlyOver#readme",
+  "dependencies": {
+    "cesium": "^1.140.0"
+  },
+  "devDependencies": {
+    "electron": "^41.2.0"
+  }
+}
