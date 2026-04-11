@@ -111,7 +111,7 @@ function createPlaybackState(trackpoints) {
     currentIndex: 0,
     currentSample: trackpoints[0],
     isPlaying: true,
-    speedMultiplier: 240,
+    speedMultiplier: 40,
     lastFrameTime: null,
     animationFrameId: null,
     markerEntity: null,
@@ -119,8 +119,8 @@ function createPlaybackState(trackpoints) {
     routePositions: [],
     camera: {
       mode: "follow",
-      smoothedDestination: null,
-      smoothedTarget: null,
+      smoothedFocus: null,
+      smoothedHeading: null,
       routeEntity: null,
     },
   };
@@ -167,12 +167,9 @@ function addRouteEntities(viewer, sampleTrack) {
     name: "Sample TCX route",
     polyline: {
       positions: routePositions,
-      width: 7,
+      width: 2.5,
       clampToGround: false,
-      material: new Cesium.PolylineGlowMaterialProperty({
-        color: Cesium.Color.fromCssColorString("#43d9ff"),
-        glowPower: 0.22,
-      }),
+      material: Cesium.Color.fromCssColorString("#ffffff").withAlpha(0.95),
     },
   });
 
@@ -236,8 +233,8 @@ function getLookAheadTrackpoint(playbackState, lookAheadPointCount = 12) {
 }
 
 function resetFollowCameraSmoothing(playbackState) {
-  playbackState.camera.smoothedDestination = null;
-  playbackState.camera.smoothedTarget = null;
+  playbackState.camera.smoothedFocus = null;
+  playbackState.camera.smoothedHeading = null;
 }
 
 function updateCameraUI(playbackState) {
@@ -277,87 +274,58 @@ function updateFollowCamera(viewer, playbackState) {
     return;
   }
 
-  const forward = Cesium.Cartesian3.normalize(
+  const transform = Cesium.Transforms.eastNorthUpToFixedFrame(currentPosition);
+  const inverseTransform = Cesium.Matrix4.inverseTransformation(
+    transform,
+    new Cesium.Matrix4(),
+  );
+  const localForward = Cesium.Matrix4.multiplyByPointAsVector(
+    inverseTransform,
     rawForward,
     new Cesium.Cartesian3(),
   );
-  const right = Cesium.Cartesian3.cross(
-    forward,
-    up,
-    new Cesium.Cartesian3(),
-  );
 
-  if (Cesium.Cartesian3.magnitudeSquared(right) === 0) {
+  if (
+    !Number.isFinite(localForward.x) ||
+    !Number.isFinite(localForward.y) ||
+    (localForward.x === 0 && localForward.y === 0)
+  ) {
     return;
   }
 
-  const tangentForward = Cesium.Cartesian3.normalize(
-    Cesium.Cartesian3.cross(up, right, new Cesium.Cartesian3()),
-    new Cesium.Cartesian3(),
-  );
-  const desiredDestination = Cesium.Cartesian3.add(
-    Cesium.Cartesian3.add(
-      currentPosition,
-      Cesium.Cartesian3.multiplyByScalar(
-        tangentForward,
-        -150,
-        new Cesium.Cartesian3(),
-      ),
-      new Cesium.Cartesian3(),
-    ),
-    Cesium.Cartesian3.multiplyByScalar(up, 95, new Cesium.Cartesian3()),
-    new Cesium.Cartesian3(),
-  );
-  const desiredTarget = Cesium.Cartesian3.add(
-    Cesium.Cartesian3.add(
-      currentPosition,
-      Cesium.Cartesian3.multiplyByScalar(
-        tangentForward,
-        80,
-        new Cesium.Cartesian3(),
-      ),
-      new Cesium.Cartesian3(),
-    ),
-    Cesium.Cartesian3.multiplyByScalar(up, 18, new Cesium.Cartesian3()),
+  const desiredHeading = Math.atan2(localForward.x, localForward.y);
+  const desiredFocus = Cesium.Cartesian3.add(
+    currentPosition,
+    Cesium.Cartesian3.multiplyByScalar(up, 8, new Cesium.Cartesian3()),
     new Cesium.Cartesian3(),
   );
 
-  if (!playbackState.camera.smoothedDestination) {
-    playbackState.camera.smoothedDestination = Cesium.Cartesian3.clone(
-      desiredDestination,
-    );
-    playbackState.camera.smoothedTarget = Cesium.Cartesian3.clone(desiredTarget);
+  if (!playbackState.camera.smoothedFocus) {
+    playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
+    playbackState.camera.smoothedHeading = desiredHeading;
   } else {
     Cesium.Cartesian3.lerp(
-      playbackState.camera.smoothedDestination,
-      desiredDestination,
-      0.14,
-      playbackState.camera.smoothedDestination,
-    );
-    Cesium.Cartesian3.lerp(
-      playbackState.camera.smoothedTarget,
-      desiredTarget,
+      playbackState.camera.smoothedFocus,
+      desiredFocus,
       0.18,
-      playbackState.camera.smoothedTarget,
+      playbackState.camera.smoothedFocus,
+    );
+    const headingDelta = Cesium.Math.negativePiToPi(
+      desiredHeading - playbackState.camera.smoothedHeading,
+    );
+    playbackState.camera.smoothedHeading = Cesium.Math.negativePiToPi(
+      playbackState.camera.smoothedHeading + headingDelta * 0.14,
     );
   }
 
-  const direction = Cesium.Cartesian3.normalize(
-    Cesium.Cartesian3.subtract(
-      playbackState.camera.smoothedTarget,
-      playbackState.camera.smoothedDestination,
-      new Cesium.Cartesian3(),
+  viewer.camera.lookAt(
+    playbackState.camera.smoothedFocus,
+    new Cesium.HeadingPitchRange(
+      playbackState.camera.smoothedHeading,
+      Cesium.Math.toRadians(-45),
+      190,
     ),
-    new Cesium.Cartesian3(),
   );
-
-  viewer.camera.setView({
-    destination: playbackState.camera.smoothedDestination,
-    orientation: {
-      direction,
-      up,
-    },
-  });
 }
 
 function createViewer() {
@@ -500,11 +468,11 @@ function addPlaybackEntities(viewer, playbackState) {
       positions: new Cesium.CallbackProperty(() => {
         return buildPlayedRoutePositions(Cesium, playbackState);
       }, false),
-      width: 9,
+      width: 30, /* xxxx */ 
       clampToGround: false,
       material: new Cesium.PolylineGlowMaterialProperty({
-        color: Cesium.Color.fromCssColorString("#ffe56a"),
-        glowPower: 0.18,
+        color: Cesium.Color.fromCssColorString("#2c7dff"),
+        glowPower: 0.16,
       }),
     },
   });
@@ -682,7 +650,7 @@ async function initializeApp() {
     startPlayback(viewer, playbackState);
     console.log("BikeFlyOver sample track summary:", sampleTrack.summary);
     setRouteStatus(
-      `Highlighted ${sampleTrack.summary.pointCount.toLocaleString()} points in 3D.`,
+      `Completed route is bold blue; upcoming route stays thin white.`,
     );
     setStatus(
       `Following ${sampleTrack.fileName} with a trailing 3D camera.`,
