@@ -18,6 +18,7 @@ Allow the user to import image and video files into the current session so they 
    - file name
    - media type (`image` or `video`)
    - timestamp metadata status
+   Images are in samples/ directory for now
 2. Add an import action in the control panel and/or application menu.
 3. Use Electron main-process file picking and return normalized file descriptors to the renderer.
 4. Accept common desktop formats only for v1:
