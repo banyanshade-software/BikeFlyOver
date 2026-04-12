@@ -1,6 +1,6 @@
 # BikeFlyOver feature matrix for v1 to v4
 
-Version selection rule: leave the **Version** column empty until product review is complete, then fill each row with `v1` or `v2`.
+Version selection rule: use the **Version** column to assign each row to `v1`, `v2`, `v3`, or `v4`.
 
 ## Current implemented POC baseline
 
@@ -54,9 +54,9 @@ These capabilities already exist in the current proof of concept and should be t
 | F-30 |v2  | Export | Add export summary dialog with output path, estimated frame count, and warnings | Improves usability and reduces accidental long exports | Not implemented |
 | F-31 |v3  | Export | Preserve debug frame sequence on failure and expose it clearly in the UI | Useful for troubleshooting failed exports | Partial |
 | F-32 |v3  | Export | Add resumable / restartable export workflow for failed long renders | Important for long projects | Not implemented |
-| F-33 |v2  | Project | Save project locally with references to imported traces, media, timeline edits, camera setup, and export settings | Required by the spec | Not implemented |
-| F-34 |v2  | Project | Load previously saved projects | Required by the spec | Not implemented |
-| F-35 |v2  | Project | Detect missing files when reopening a project and offer relinking | Required for a usable desktop workflow | Not implemented |
+| F-33 |v3  | Project | Save project locally with references to imported traces, media, timeline edits, camera setup, and export settings | Required by the spec | Not implemented |
+| F-34 |v3  | Project | Load previously saved projects | Required by the spec | Not implemented |
+| F-35 |v3  | Project | Detect missing files when reopening a project and offer relinking | Required for a usable desktop workflow | Not implemented |
 | F-36 |v1  | GUI enhancement | Keep the control panel scrollable on all supported window sizes and long forms | Already partly present; should be preserved and hardened | Partial |
 | F-37 |v2  | GUI enhancement | Add a resizable split layout between control panel and viewer | Improves usability on large and small screens | Not implemented |
 | F-38 |v2  | GUI enhancement | Add collapsible control sections (Import, Timeline, Camera, Overlay, Export) | Reduces clutter as features grow | Not implemented |
@@ -84,17 +84,38 @@ These capabilities already exist in the current proof of concept and should be t
 | F-60 |v2  | Bug fix | Handle window resize edge cases so low-resolution exports do not break the preview layout or controls | Important now that multiple export resolutions exist | Partial |
 | F-61 |v4  | Bug fix | Prevent timeline/playback state from jumping unexpectedly after export ends | Keeps editing workflow predictable | Partial |
 | F-62 |v3  | Platform | Define supported targets for desktop first, then mobile if still in scope | The current POC is desktop-focused while the spec mentions mobile | Not implemented |
-| F-63 | v2 | Platform | Add packaging/distribution for macOS, Windows, and Linux | Required for actual desktop delivery | Not implemented |
-| F-64 | v2 | Camera | Adapt speed: 
+| F-63 | v3 | Platform | Add packaging/distribution for macOS, Windows, and Linux | Required for actual desktop delivery | Not implemented |
+| F-64 | v2 | Camera | Adapt speed: when track is idle, stay less (more time acceleration), specially if user paused | Makes better videos | Not Implemented |
+| F-65 | v2 | Camera | Adapt camera movement: avoid too many moves ; when trace change direction, and specifically if it changes direction several time in a short time, get a higher point of view |  Makes better videos | Not Implemented |
+| F-66 | v2 | Camera | Add a small map view as incrustation in the video ; north should stay up and map should show the whole track|  Makes better videos | Not Implemented |
 
 ## Suggested grouping for release planning
 
 ### v1 candidates
 
+- Timeline foundations: `F-08`, `F-10`
+- Basic media insertion on the route timeline: `F-18`, `F-19`, `F-20`
+- GUI essentials: `F-36`, `F-44`
+- Immediate route and camera bug fixes: `F-45`, `F-55`, `F-56`, `F-57`
+
 ### v2 candidates
 
+- Camera editing and smarter video composition: `F-14`, `F-21`, `F-23`, `F-24`, `F-25`, `F-26`, `F-28`, `F-29`, `F-30`, `F-64`, `F-65`, `F-66`
+- GUI workflow improvements: `F-37`, `F-38`, `F-39`
+- Performance and robustness improvements for the export/editor loop: `F-46`, `F-47`, `F-52`, `F-53`, `F-54`, `F-60`
+
 ### v3 candidates
+
+- Core import and project workflow: `F-01`, `F-02`, `F-03`, `F-04`, `F-06`, `F-07`, `F-33`, `F-34`, `F-35`
+- Advanced editing and preview workflow: `F-09`, `F-11`, `F-12`, `F-13`, `F-15`, `F-16`, `F-17`, `F-22`
+- Advanced export, validation, and UX work: `F-27`, `F-31`, `F-32`, `F-40`, `F-41`, `F-43`, `F-49`, `F-50`, `F-51`
+- Platform planning and delivery: `F-62`, `F-63`
+
 ### v4 candidates
+
+- Multi-trace composition: `F-05`
+- Secondary desktop ergonomics and large-export safeguards: `F-42`, `F-48`
+- Late-stage export restoration and playback-state cleanup: `F-58`, `F-59`, `F-61`
 
 ## Notes
 
