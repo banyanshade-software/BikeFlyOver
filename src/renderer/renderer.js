@@ -28,6 +28,7 @@ const mediaLibraryState = {
   statusMessage: "No media imported yet.",
 };
 const TIMELINE_SLIDER_MAX = 1000;
+const ROUTE_DISPLAY_HEIGHT_METERS = 2;
 const TIMELINE_SCRUB_KEYS = new Set([
   "ArrowLeft",
   "ArrowRight",
@@ -446,11 +447,7 @@ function alignMediaItemsToTrack(mediaItems, trackpoints) {
 
 function buildRoutePositions(Cesium, trackpoints) {
   return trackpoints.map((trackpoint) =>
-    Cesium.Cartesian3.fromDegrees(
-      trackpoint.longitude,
-      trackpoint.latitude,
-      trackpoint.altitude,
-    ),
+    toRouteDisplayPosition(Cesium, trackpoint),
   );
 }
 
@@ -495,11 +492,7 @@ function addRouteEntities(viewer, sampleTrack) {
   viewer.entities.add({
     id: "route-start",
     name: "Route start",
-    position: Cesium.Cartesian3.fromDegrees(
-      startTrackpoint.longitude,
-      startTrackpoint.latitude,
-      startTrackpoint.altitude,
-    ),
+    position: toRouteDisplayPosition(Cesium, startTrackpoint),
     point: {
       pixelSize: 13,
       color: Cesium.Color.fromCssColorString("#6dff8a"),
@@ -512,11 +505,7 @@ function addRouteEntities(viewer, sampleTrack) {
   viewer.entities.add({
     id: "route-end",
     name: "Route end",
-    position: Cesium.Cartesian3.fromDegrees(
-      endTrackpoint.longitude,
-      endTrackpoint.latitude,
-      endTrackpoint.altitude,
-    ),
+    position: toRouteDisplayPosition(Cesium, endTrackpoint),
     point: {
       pixelSize: 13,
       color: Cesium.Color.fromCssColorString("#ff8a5b"),
@@ -546,11 +535,11 @@ function updateCameraUI(playbackState) {
   );
 }
 
-function toCartesianPosition(Cesium, trackpoint) {
+function toRouteDisplayPosition(Cesium, trackpoint) {
   return Cesium.Cartesian3.fromDegrees(
     trackpoint.longitude,
     trackpoint.latitude,
-    trackpoint.altitude,
+    ROUTE_DISPLAY_HEIGHT_METERS,
   );
 }
 
@@ -590,9 +579,12 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     return;
   }
 
-  const currentPosition = toCartesianPosition(Cesium, playbackState.currentSample);
+  const currentPosition = toRouteDisplayPosition(
+    Cesium,
+    playbackState.currentSample,
+  );
   const lookAheadTrackpoint = getLookAheadTrackpoint(playbackState);
-  const lookAheadPosition = toCartesianPosition(Cesium, lookAheadTrackpoint);
+  const lookAheadPosition = toRouteDisplayPosition(Cesium, lookAheadTrackpoint);
   const ellipsoid = viewer.scene.globe.ellipsoid;
   const up = ellipsoid.geodeticSurfaceNormal(
     currentPosition,
@@ -799,7 +791,9 @@ function buildPlayedRoutePositions(Cesium, playbackState) {
   );
 
   if (playbackState.currentSample) {
-    playedPositions.push(toCartesianPosition(Cesium, playbackState.currentSample));
+    playedPositions.push(
+      toRouteDisplayPosition(Cesium, playbackState.currentSample),
+    );
   }
 
   return playedPositions;
@@ -811,7 +805,7 @@ function addPlaybackEntities(viewer, playbackState) {
   const markerEntity = viewer.entities.add({
     id: "current-position-marker",
     name: "Current position",
-    position: toCartesianPosition(Cesium, playbackState.currentSample),
+    position: toRouteDisplayPosition(Cesium, playbackState.currentSample),
     point: {
       pixelSize: 16,
       color: Cesium.Color.fromCssColorString("#ffe56a"),
@@ -845,7 +839,7 @@ function updateMarkerPosition(playbackState) {
   const Cesium = window.Cesium;
 
   if (playbackState.markerEntity) {
-    playbackState.markerEntity.position = toCartesianPosition(
+    playbackState.markerEntity.position = toRouteDisplayPosition(
       Cesium,
       playbackState.currentSample,
     );
