@@ -41,7 +41,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-17 |v3  | Camera | Stabilize and refine follow-camera behavior for long tracks and sharp turns | Mentioned as a risk and improves export quality | Partial |
 | F-18 |v1  | Media | Import photos and videos into the project | Required by the spec | Implemented |
 | F-19 |v1  | Media | Read EXIF timestamps from photos and videos | Required for automatic placement | Implemented |
-| F-20 |v1  | Media | Place photos/videos on the route timeline using timestamp alignment | Required by the spec | Not implemented |
+| F-20 |v1  | Media | Place photos/videos on the route timeline using timestamp alignment | Required by the spec | Implemented |
 | F-21 |v2  | Media | Provide UI fields to fix camera/GPS time drift | Explicitly requested in the spec | Not implemented |
 | F-22 |v3  | Media | Preview inserted media in the timeline and viewer | Needed to validate placement before export | Not implemented |
 | F-23 |v2  | Overlay | Display metrics from the activity file (speed, time, distance, heart rate when available) | Required by the spec | Not implemented |

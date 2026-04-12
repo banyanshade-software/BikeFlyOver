@@ -13,7 +13,6 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
   resolutionPresets: [],
   cameraModes: [],
 };
-
 const RENDER_MODE =
   new URLSearchParams(window.location.search).get("mode") === "export"
     ? "export"
@@ -145,6 +144,39 @@ function formatMediaTimestampDetails(item) {
   return "Timestamp metadata pending extraction";
 }
 
+function formatMediaAlignmentStatus(status) {
+  if (status === "aligned") {
+    return "Aligned to activity timeline";
+  }
+
+  if (status === "before-start") {
+    return "Captured before activity start";
+  }
+
+  if (status === "after-end") {
+    return "Captured after activity end";
+  }
+
+  if (status === "missing-timestamp") {
+    return "Cannot align without timestamp metadata";
+  }
+
+  return "Alignment pending";
+}
+
+function formatMediaAlignmentDetails(item) {
+  if (!item.alignedActivityTime) {
+    return "No aligned activity position available";
+  }
+
+  const trackpointLabel =
+    item.nearestTrackIndex === null
+      ? "no trackpoint"
+      : `trackpoint ${item.nearestTrackIndex + 1}`;
+
+  return `${formatTimestamp(item.alignedActivityTime)} · ${trackpointLabel}`;
+}
+
 function renderSummary(sampleTrack) {
   const summaryList = document.getElementById("summaryList");
 
@@ -229,9 +261,107 @@ function mergeImportedMedia(existingItems, importedItems) {
     byPath.set(item.filePath, item);
   }
 
-  return Array.from(byPath.values()).sort((left, right) => {
-    return left.fileName.localeCompare(right.fileName);
-  });
+  return Array.from(byPath.values());
+}
+
+function findNearestTrackIndex(trackpoints, timestamp) {
+  if (trackpoints.length === 0) {
+    return null;
+  }
+
+  let low = 0;
+  let high = trackpoints.length - 1;
+
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2);
+    const middleTimestamp = trackpoints[middle].timestamp;
+
+    if (middleTimestamp === timestamp) {
+      return middle;
+    }
+
+    if (middleTimestamp < timestamp) {
+      low = middle + 1;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  if (low >= trackpoints.length) {
+    return trackpoints.length - 1;
+  }
+
+  if (high < 0) {
+    return 0;
+  }
+
+  return Math.abs(trackpoints[low].timestamp - timestamp) <
+    Math.abs(trackpoints[high].timestamp - timestamp)
+    ? low
+    : high;
+}
+
+function alignMediaItemsToTrack(mediaItems, trackpoints) {
+  const startTimestamp = trackpoints[0].timestamp;
+  const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
+
+  return mediaItems
+    .map((item) => {
+      if (!Number.isFinite(item.capturedAtTimestamp)) {
+        return {
+          ...item,
+          alignmentStatus: "missing-timestamp",
+          alignedActivityTimestamp: null,
+          alignedActivityTime: null,
+          nearestTrackIndex: null,
+        };
+      }
+
+      if (item.capturedAtTimestamp < startTimestamp) {
+        return {
+          ...item,
+          alignmentStatus: "before-start",
+          alignedActivityTimestamp: startTimestamp,
+          alignedActivityTime: new Date(startTimestamp).toISOString(),
+          nearestTrackIndex: 0,
+        };
+      }
+
+      if (item.capturedAtTimestamp > endTimestamp) {
+        return {
+          ...item,
+          alignmentStatus: "after-end",
+          alignedActivityTimestamp: endTimestamp,
+          alignedActivityTime: new Date(endTimestamp).toISOString(),
+          nearestTrackIndex: trackpoints.length - 1,
+        };
+      }
+
+      return {
+        ...item,
+        alignmentStatus: "aligned",
+        alignedActivityTimestamp: item.capturedAtTimestamp,
+        alignedActivityTime: new Date(item.capturedAtTimestamp).toISOString(),
+        nearestTrackIndex: findNearestTrackIndex(
+          trackpoints,
+          item.capturedAtTimestamp,
+        ),
+      };
+    })
+    .sort((left, right) => {
+      const leftTimestamp = Number.isFinite(left.alignedActivityTimestamp)
+        ? left.alignedActivityTimestamp
+        : Number.POSITIVE_INFINITY;
+      const rightTimestamp = Number.isFinite(right.alignedActivityTimestamp)
+        ? right.alignedActivityTimestamp
+        : Number.POSITIVE_INFINITY;
+
+      if (leftTimestamp !== rightTimestamp) {
+        return leftTimestamp - rightTimestamp;
+      }
+
+      return left.fileName.localeCompare(right.fileName);
+    });
 }
 
 function buildRoutePositions(Cesium, trackpoints) {
@@ -900,12 +1030,27 @@ function updateMediaLibraryUi() {
     timestampDetails.className = "media-library-meta";
     timestampDetails.textContent = formatMediaTimestampDetails(item);
 
-    listItem.append(name, meta, status, timestampDetails);
+    const alignmentStatus = document.createElement("p");
+    alignmentStatus.className = "media-library-status";
+    alignmentStatus.textContent = formatMediaAlignmentStatus(item.alignmentStatus);
+
+    const alignmentDetails = document.createElement("p");
+    alignmentDetails.className = "media-library-meta";
+    alignmentDetails.textContent = formatMediaAlignmentDetails(item);
+
+    listItem.append(
+      name,
+      meta,
+      status,
+      timestampDetails,
+      alignmentStatus,
+      alignmentDetails,
+    );
     mediaLibraryList.append(listItem);
   }
 }
 
-function setupMediaLibraryControls() {
+function setupMediaLibraryControls(sampleTrack) {
   const importMediaButton = document.getElementById("importMediaButton");
 
   importMediaButton?.addEventListener("click", async () => {
@@ -916,16 +1061,25 @@ function setupMediaLibraryControls() {
       const result = await window.bikeFlyOverApp.importMedia();
 
       if (!result?.cancelled && Array.isArray(result?.mediaItems)) {
-        mediaLibraryState.items = mergeImportedMedia(
-          mediaLibraryState.items,
-          result.mediaItems,
+        mediaLibraryState.items = alignMediaItemsToTrack(
+          mergeImportedMedia(
+            mediaLibraryState.items,
+            result.mediaItems,
+          ),
+          sampleTrack.trackpoints,
         );
-        const extractedCount = result.mediaItems.filter((item) => {
-          return item.timestampMetadataStatus === "extracted";
+        const alignedCount = mediaLibraryState.items.filter((item) => {
+          return item.alignmentStatus === "aligned";
+        }).length;
+        const outOfRangeCount = mediaLibraryState.items.filter((item) => {
+          return (
+            item.alignmentStatus === "before-start" ||
+            item.alignmentStatus === "after-end"
+          );
         }).length;
         mediaLibraryState.statusMessage =
           result.mediaItems.length > 0
-            ? `Imported ${result.mediaItems.length} media item${result.mediaItems.length === 1 ? "" : "s"}; extracted ${extractedCount} timestamp${extractedCount === 1 ? "" : "s"}.`
+            ? `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range.`
             : "No supported media files were added.";
       } else if (result?.cancelled) {
         mediaLibraryState.statusMessage =
@@ -1271,7 +1425,7 @@ async function initializeApp() {
       populateExportControls();
       updateMediaLibraryUi();
       setupExportRenderBridge(viewer, playbackState);
-      setupMediaLibraryControls();
+      setupMediaLibraryControls(sampleTrack);
       setupPlaybackControls(viewer, playbackState);
       setupExportControls();
       startPlayback(viewer, playbackState);
