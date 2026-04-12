@@ -318,14 +318,40 @@ function updateFollowCamera(viewer, playbackState) {
     );
   }
 
-  viewer.camera.lookAt(
-    playbackState.camera.smoothedFocus,
-    new Cesium.HeadingPitchRange(
-      playbackState.camera.smoothedHeading,
-      Cesium.Math.toRadians(-45),
-      190,
-    ),
+  const heading = playbackState.camera.smoothedHeading;
+  const pitch = Cesium.Math.toRadians(-45);
+  const range = 190;
+  const localOffset = new Cesium.Cartesian3(
+    -Math.sin(heading) * Math.cos(pitch) * range,
+    -Math.cos(heading) * Math.cos(pitch) * range,
+    -Math.sin(pitch) * range,
   );
+  const destination = Cesium.Matrix4.multiplyByPoint(
+    Cesium.Transforms.eastNorthUpToFixedFrame(playbackState.camera.smoothedFocus),
+    localOffset,
+    new Cesium.Cartesian3(),
+  );
+  const direction = Cesium.Cartesian3.normalize(
+    Cesium.Cartesian3.subtract(
+      playbackState.camera.smoothedFocus,
+      destination,
+      new Cesium.Cartesian3(),
+    ),
+    new Cesium.Cartesian3(),
+  );
+  const cameraUp = ellipsoid.geodeticSurfaceNormal(
+    destination,
+    new Cesium.Cartesian3(),
+  );
+
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.camera.setView({
+    destination,
+    orientation: {
+      direction,
+      up: cameraUp,
+    },
+  });
 }
 
 function createViewer() {
@@ -352,6 +378,9 @@ function createViewer() {
 
   viewer.scene.globe.enableLighting = true;
   viewer.scene.globe.depthTestAgainstTerrain = false;
+  viewer.scene.screenSpaceCameraController.inertiaSpin = 0;
+  viewer.scene.screenSpaceCameraController.inertiaTranslate = 0;
+  viewer.scene.screenSpaceCameraController.inertiaZoom = 0;
 
   return viewer;
 }
@@ -527,6 +556,29 @@ function stopCameraMotion(viewer) {
   viewer.camera.cancelFlight();
 }
 
+function freezeFollowCamera(viewer, playbackState) {
+  const Cesium = window.Cesium;
+
+  if (playbackState.camera.mode !== "follow") {
+    stopCameraMotion(viewer);
+    return;
+  }
+
+  const frozenPosition = Cesium.Cartesian3.clone(viewer.camera.positionWC);
+  const frozenDirection = Cesium.Cartesian3.clone(viewer.camera.directionWC);
+  const frozenUp = Cesium.Cartesian3.clone(viewer.camera.upWC);
+
+  viewer.camera.cancelFlight();
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.camera.setView({
+    destination: frozenPosition,
+    orientation: {
+      direction: frozenDirection,
+      up: frozenUp,
+    },
+  });
+}
+
 function tickPlayback(viewer, playbackState, frameTime) {
   if (!playbackState.isPlaying) {
     playbackState.animationFrameId = null;
@@ -566,6 +618,7 @@ function startPlayback(viewer, playbackState) {
 
   playbackState.isPlaying = true;
   playbackState.lastFrameTime = null;
+  resetFollowCameraSmoothing(playbackState);
   updatePlaybackUI(playbackState);
   playbackState.animationFrameId = window.requestAnimationFrame((frameTime) =>
     tickPlayback(viewer, playbackState, frameTime),
@@ -576,7 +629,7 @@ function pausePlayback(viewer, playbackState) {
   playbackState.isPlaying = false;
   playbackState.lastFrameTime = null;
   stopPlayback(playbackState);
-  stopCameraMotion(viewer);
+  freezeFollowCamera(viewer, playbackState);
   updatePlaybackUI(playbackState);
 }
 
