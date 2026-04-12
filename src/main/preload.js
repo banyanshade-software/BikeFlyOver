@@ -1,32 +1,66 @@
-const path = require("node:path");
-const fs = require("node:fs/promises");
 const { contextBridge, ipcRenderer } = require("electron");
+const { loadSampleTrack } = require("../shared/sample-track");
 const {
-  parseTcxTrack,
-  summarizeTrackpoints,
-} = require("../io/tcx/parseTcx");
+  EXPORT_CAMERA_MODES,
+  EXPORT_DEFAULTS,
+  EXPORT_RESOLUTION_PRESETS,
+} = require("../shared/export");
+
+function subscribe(channel, listener) {
+  const wrappedListener = (_event, payload) => {
+    listener(payload);
+  };
+
+  ipcRenderer.on(channel, wrappedListener);
+
+  return () => {
+    ipcRenderer.removeListener(channel, wrappedListener);
+  };
+}
 
 contextBridge.exposeInMainWorld("bikeFlyOverApp", {
-  async loadSampleTrack() {
-    const samplePath = path.join(
-      __dirname,
-      "../../samples/activity_22469836126.tcx",
-    );
-    const xml = await fs.readFile(samplePath, "utf8");
-    const trackpoints = parseTcxTrack(xml);
-    const summary = summarizeTrackpoints(trackpoints);
-
+  loadSampleTrack,
+  getExportOptions() {
     return {
-      fileName: path.basename(samplePath),
-      samplePath,
-      trackpoints,
-      summary,
+      defaults: EXPORT_DEFAULTS,
+      resolutionPresets: EXPORT_RESOLUTION_PRESETS,
+      cameraModes: EXPORT_CAMERA_MODES,
     };
   },
-  notifyReady() {
-    ipcRenderer.send("renderer-ready");
+  startExport(settings) {
+    return ipcRenderer.invoke("export-start", settings);
   },
-  notifyError(message) {
-    ipcRenderer.send("renderer-error", message);
+  cancelExport() {
+    return ipcRenderer.invoke("export-cancel");
+  },
+  onExportStatus(listener) {
+    return subscribe("export-status", listener);
+  },
+  onExportPrepare(listener) {
+    return subscribe("export-prepare", listener);
+  },
+  onExportReset(listener) {
+    return subscribe("export-reset", listener);
+  },
+  onRenderExportFrame(listener) {
+    return subscribe("export-render-frame", listener);
+  },
+  onExportCancel(listener) {
+    return subscribe("export-cancelled", listener);
+  },
+  notifyExportPrepared(payload = {}) {
+    ipcRenderer.send("export-prepared", payload);
+  },
+  notifyExportFrameSettled(payload) {
+    ipcRenderer.send("export-frame-settled", payload);
+  },
+  notifyReady(details = {}) {
+    ipcRenderer.send("renderer-ready", details);
+  },
+  notifyError(message, details = {}) {
+    ipcRenderer.send("renderer-error", {
+      message,
+      ...details,
+    });
   },
 });

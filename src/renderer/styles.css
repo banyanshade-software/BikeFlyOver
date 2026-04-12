@@ -16,6 +16,13 @@ body {
   overflow: hidden;
 }
 
+.export-mode,
+.export-mode body,
+.export-session-active,
+.export-session-active body {
+  background: #000;
+}
+
 .app-shell {
   display: grid;
   grid-template-rows: auto 1fr;
@@ -109,6 +116,53 @@ body {
   transform: translateY(1px);
 }
 
+.button-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.field-stack {
+  display: grid;
+  gap: 0.8rem;
+  margin-bottom: 1rem;
+}
+
+.field-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #79bdff;
+}
+
+.field-group input,
+.field-group select {
+  border: 1px solid rgba(121, 189, 255, 0.25);
+  border-radius: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  background: rgba(12, 31, 48, 0.95);
+  color: #f4f8fb;
+  font: inherit;
+}
+
+.field-group input:focus-visible,
+.field-group select:focus-visible {
+  outline: 2px solid #79bdff;
+  outline-offset: 2px;
+}
+
+.helper-text {
+  margin: 0.85rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: #b8d8f6;
+}
+
 .summary-list {
   display: grid;
   gap: 0.85rem;
@@ -142,6 +196,29 @@ body {
 .viewer-panel {
   width: 100%;
   height: 100%;
+}
+
+.export-mode .app-header,
+.export-mode .summary-panel,
+.export-session-active .app-header,
+.export-session-active .summary-panel {
+  display: none;
+}
+
+.export-mode .app-shell,
+.export-session-active .app-shell {
+  display: block;
+}
+
+.export-mode .viewer-layout,
+.export-session-active .viewer-layout {
+  display: block;
+  height: 100vh;
+}
+
+.export-mode .viewer-panel,
+.export-session-active .viewer-panel {
+  height: 100vh;
 }
 
 @media (max-width: 960px) {

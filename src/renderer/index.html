@@ -91,6 +91,60 @@
               </div>
             </dl>
           </section>
+          <section class="controls-panel" aria-label="Export controls">
+            <h2>Export MP4</h2>
+            <div class="field-stack">
+              <label class="field-group">
+                <span class="field-label">Resolution</span>
+                <select id="exportResolutionSelect"></select>
+              </label>
+              <label class="field-group">
+                <span class="field-label">FPS</span>
+                <input
+                  id="exportFpsInput"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="30"
+                />
+              </label>
+              <label class="field-group">
+                <span class="field-label">Speed multiplier</span>
+                <input
+                  id="exportSpeedInput"
+                  type="number"
+                  min="0.1"
+                  step="0.1"
+                  value="40"
+                />
+              </label>
+              <label class="field-group">
+                <span class="field-label">Camera mode</span>
+                <select id="exportCameraModeSelect"></select>
+              </label>
+            </div>
+            <div class="button-row">
+              <button id="startExportButton" type="button">Export MP4</button>
+              <button id="cancelExportButton" type="button" disabled>Cancel</button>
+            </div>
+            <dl class="summary-list summary-list--compact">
+              <div>
+                <dt>Status</dt>
+                <dd id="exportStatus">Idle</dd>
+              </div>
+              <div>
+                <dt>Phase</dt>
+                <dd id="exportPhase">-</dd>
+              </div>
+              <div>
+                <dt>Frames</dt>
+                <dd id="exportProgress">-</dd>
+              </div>
+            </dl>
+            <p id="exportMessage" class="helper-text">
+              Encodes with the bundled ffmpeg binary.
+            </p>
+          </section>
         </aside>
         <section id="cesiumContainer" class="viewer-panel" aria-label="Cesium viewer"></section>
       </main>

@@ -1,3 +1,28 @@
+const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
+  defaults: {
+    resolutionId: "landscape-720p",
+    width: 1280,
+    height: 720,
+    fps: 30,
+    speedMultiplier: 40,
+    cameraMode: "follow",
+    settleTimeoutMs: 15000,
+    settleStablePasses: 2,
+    maxFrameRetries: 1,
+  },
+  resolutionPresets: [],
+  cameraModes: [],
+};
+
+const RENDER_MODE =
+  new URLSearchParams(window.location.search).get("mode") === "export"
+    ? "export"
+    : "preview";
+
+const exportUiState = {
+  isExporting: false,
+};
+
 function setStatus(message) {
   const statusElement = document.getElementById("status");
 
@@ -38,6 +63,19 @@ function setTextContent(elementId, value) {
   }
 }
 
+function setElementDisabled(elementId, disabled) {
+  const element = document.getElementById(elementId);
+
+  if (element instanceof HTMLInputElement || element instanceof HTMLButtonElement) {
+    element.disabled = disabled;
+    return;
+  }
+
+  if (element instanceof HTMLSelectElement) {
+    element.disabled = disabled;
+  }
+}
+
 function formatTimestamp(timestamp) {
   return new Date(timestamp).toLocaleString();
 }
@@ -55,6 +93,14 @@ function formatAltitude(bounds) {
 
 function formatProgress(progressRatio) {
   return `${(progressRatio * 100).toFixed(1)}%`;
+}
+
+function formatFrameProgress(currentFrame, totalFrames) {
+  if (!Number.isFinite(totalFrames) || totalFrames < 1) {
+    return "-";
+  }
+
+  return `${currentFrame} / ${totalFrames}`;
 }
 
 function renderSummary(sampleTrack) {
@@ -98,7 +144,7 @@ function renderSummary(sampleTrack) {
   `;
 }
 
-function createPlaybackState(trackpoints) {
+function createPlaybackState(trackpoints, options = {}) {
   const startTimestamp = trackpoints[0].timestamp;
   const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
 
@@ -110,18 +156,22 @@ function createPlaybackState(trackpoints) {
     currentTimestamp: startTimestamp,
     currentIndex: 0,
     currentSample: trackpoints[0],
-    isPlaying: true,
-    speedMultiplier: 40,
+    isPlaying: false,
+    speedMultiplier: options.speedMultiplier ?? EXPORT_OPTIONS.defaults.speedMultiplier,
     lastFrameTime: null,
     animationFrameId: null,
     markerEntity: null,
     progressEntity: null,
     routePositions: [],
     camera: {
-      mode: "follow",
+      mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
       smoothedFocus: null,
       smoothedHeading: null,
+      routeBoundingSphere: null,
       routeEntity: null,
+    },
+    export: {
+      cancelRequested: false,
     },
   };
 }
@@ -159,6 +209,7 @@ function addRouteEntities(viewer, sampleTrack) {
   const Cesium = window.Cesium;
   const { trackpoints } = sampleTrack;
   const routePositions = buildRoutePositions(Cesium, trackpoints);
+  const routeBoundingSphere = Cesium.BoundingSphere.fromPoints(routePositions);
   const startTrackpoint = trackpoints[0];
   const endTrackpoint = trackpoints[trackpoints.length - 1];
 
@@ -207,29 +258,7 @@ function addRouteEntities(viewer, sampleTrack) {
     },
   });
 
-  return { routeEntity, routePositions };
-}
-
-async function frameRoute(viewer, routeEntity) {
-  const Cesium = window.Cesium;
-
-  await viewer.zoomTo(
-    routeEntity,
-    new Cesium.HeadingPitchRange(
-      Cesium.Math.toRadians(0),
-      Cesium.Math.toRadians(-55),
-      1800,
-    ),
-  );
-}
-
-function getLookAheadTrackpoint(playbackState, lookAheadPointCount = 12) {
-  return playbackState.trackpoints[
-    Math.min(
-      playbackState.currentIndex + lookAheadPointCount,
-      playbackState.trackpoints.length - 1,
-    )
-  ];
+  return { routeBoundingSphere, routeEntity, routePositions };
 }
 
 function resetFollowCameraSmoothing(playbackState) {
@@ -249,8 +278,45 @@ function updateCameraUI(playbackState) {
   );
 }
 
-function updateFollowCamera(viewer, playbackState) {
+function toCartesianPosition(Cesium, trackpoint) {
+  return Cesium.Cartesian3.fromDegrees(
+    trackpoint.longitude,
+    trackpoint.latitude,
+    trackpoint.altitude,
+  );
+}
+
+function setOverviewCamera(viewer, playbackState) {
   const Cesium = window.Cesium;
+  const { routeBoundingSphere } = playbackState.camera;
+
+  if (!routeBoundingSphere) {
+    return;
+  }
+
+  viewer.camera.viewBoundingSphere(
+    routeBoundingSphere,
+    new Cesium.HeadingPitchRange(
+      0,
+      Cesium.Math.toRadians(-55),
+      Math.max(routeBoundingSphere.radius * 2.8, 1800),
+    ),
+  );
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+}
+
+function getLookAheadTrackpoint(playbackState, lookAheadPointCount = 12) {
+  return playbackState.trackpoints[
+    Math.min(
+      playbackState.currentIndex + lookAheadPointCount,
+      playbackState.trackpoints.length - 1,
+    )
+  ];
+}
+
+function updateFollowCamera(viewer, playbackState, options = {}) {
+  const Cesium = window.Cesium;
+  const useSmoothing = options.useSmoothing ?? true;
 
   if (playbackState.camera.mode !== "follow") {
     return;
@@ -300,7 +366,7 @@ function updateFollowCamera(viewer, playbackState) {
     new Cesium.Cartesian3(),
   );
 
-  if (!playbackState.camera.smoothedFocus) {
+  if (!useSmoothing || !playbackState.camera.smoothedFocus) {
     playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
     playbackState.camera.smoothedHeading = desiredHeading;
   } else {
@@ -354,7 +420,7 @@ function updateFollowCamera(viewer, playbackState) {
   });
 }
 
-function createViewer() {
+function createViewer(renderMode) {
   const Cesium = window.Cesium;
 
   if (!Cesium) {
@@ -381,6 +447,11 @@ function createViewer() {
   viewer.scene.screenSpaceCameraController.inertiaSpin = 0;
   viewer.scene.screenSpaceCameraController.inertiaTranslate = 0;
   viewer.scene.screenSpaceCameraController.inertiaZoom = 0;
+
+  if (renderMode === "export") {
+    viewer.scene.requestRenderMode = true;
+    viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
+  }
 
   return viewer;
 }
@@ -453,14 +524,6 @@ function interpolateTrackpoint(playbackState) {
   };
 }
 
-function toCartesianPosition(Cesium, trackpoint) {
-  return Cesium.Cartesian3.fromDegrees(
-    trackpoint.longitude,
-    trackpoint.latitude,
-    trackpoint.altitude,
-  );
-}
-
 function buildPlayedRoutePositions(Cesium, playbackState) {
   const playedPositions = playbackState.routePositions.slice(
     0,
@@ -497,7 +560,7 @@ function addPlaybackEntities(viewer, playbackState) {
       positions: new Cesium.CallbackProperty(() => {
         return buildPlayedRoutePositions(Cesium, playbackState);
       }, false),
-      width: 30, /* xxxx */ 
+      width: 10,
       clampToGround: false,
       material: new Cesium.PolylineGlowMaterialProperty({
         color: Cesium.Color.fromCssColorString("#2c7dff"),
@@ -536,13 +599,32 @@ function updatePlaybackUI(playbackState) {
   setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
 }
 
-function syncPlaybackState(viewer, playbackState) {
+function syncPlaybackState(viewer, playbackState, options = {}) {
   advancePlaybackIndex(playbackState);
   interpolateTrackpoint(playbackState);
   updateMarkerPosition(playbackState);
-  updateFollowCamera(viewer, playbackState);
-  updatePlaybackUI(playbackState);
-  updateCameraUI(playbackState);
+
+  if (playbackState.camera.mode === "follow") {
+    updateFollowCamera(viewer, playbackState, {
+      useSmoothing: !(options.deterministicCamera ?? false),
+    });
+  } else {
+    setOverviewCamera(viewer, playbackState);
+  }
+
+  if (options.updateUi !== false) {
+    updatePlaybackUI(playbackState);
+    updateCameraUI(playbackState);
+  }
+}
+
+function setPlaybackTimestamp(viewer, playbackState, timestamp, options = {}) {
+  playbackState.currentTimestamp = Math.min(
+    playbackState.endTimestamp,
+    Math.max(playbackState.startTimestamp, timestamp),
+  );
+
+  syncPlaybackState(viewer, playbackState, options);
 }
 
 function stopPlayback(playbackState) {
@@ -552,15 +634,11 @@ function stopPlayback(playbackState) {
   }
 }
 
-function stopCameraMotion(viewer) {
-  viewer.camera.cancelFlight();
-}
-
 function freezeFollowCamera(viewer, playbackState) {
   const Cesium = window.Cesium;
 
   if (playbackState.camera.mode !== "follow") {
-    stopCameraMotion(viewer);
+    viewer.camera.cancelFlight();
     return;
   }
 
@@ -591,12 +669,11 @@ function tickPlayback(viewer, playbackState, frameTime) {
 
   const deltaMs = frameTime - playbackState.lastFrameTime;
   playbackState.lastFrameTime = frameTime;
-  playbackState.currentTimestamp = Math.min(
-    playbackState.endTimestamp,
+  setPlaybackTimestamp(
+    viewer,
+    playbackState,
     playbackState.currentTimestamp + deltaMs * playbackState.speedMultiplier,
   );
-
-  syncPlaybackState(viewer, playbackState);
 
   if (playbackState.currentTimestamp >= playbackState.endTimestamp) {
     playbackState.isPlaying = false;
@@ -618,7 +695,6 @@ function startPlayback(viewer, playbackState) {
 
   playbackState.isPlaying = true;
   playbackState.lastFrameTime = null;
-  resetFollowCameraSmoothing(playbackState);
   updatePlaybackUI(playbackState);
   playbackState.animationFrameId = window.requestAnimationFrame((frameTime) =>
     tickPlayback(viewer, playbackState, frameTime),
@@ -634,29 +710,17 @@ function pausePlayback(viewer, playbackState) {
 }
 
 function restartPlayback(viewer, playbackState) {
-  playbackState.currentTimestamp = playbackState.startTimestamp;
-  playbackState.currentIndex = 0;
-  playbackState.currentSample = playbackState.trackpoints[0];
   playbackState.lastFrameTime = null;
   resetFollowCameraSmoothing(playbackState);
-  syncPlaybackState(viewer, playbackState);
+  setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp);
   startPlayback(viewer, playbackState);
 }
 
 function switchCameraMode(viewer, playbackState) {
-  if (playbackState.camera.mode === "follow") {
-    playbackState.camera.mode = "overview";
-    resetFollowCameraSmoothing(playbackState);
-    if (playbackState.camera.routeEntity) {
-      void frameRoute(viewer, playbackState.camera.routeEntity);
-    }
-  } else {
-    playbackState.camera.mode = "follow";
-    resetFollowCameraSmoothing(playbackState);
-    updateFollowCamera(viewer, playbackState);
-  }
-
-  updateCameraUI(playbackState);
+  playbackState.camera.mode =
+    playbackState.camera.mode === "follow" ? "overview" : "follow";
+  resetFollowCameraSmoothing(playbackState);
+  syncPlaybackState(viewer, playbackState);
 }
 
 function setupPlaybackControls(viewer, playbackState) {
@@ -682,38 +746,383 @@ function setupPlaybackControls(viewer, playbackState) {
   });
 }
 
+function populateSelect(selectElement, items, selectedId) {
+  if (!(selectElement instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  selectElement.innerHTML = "";
+
+  for (const item of items) {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.label;
+    option.selected = item.id === selectedId;
+    selectElement.append(option);
+  }
+}
+
+function populateExportControls() {
+  const resolutionSelect = document.getElementById("exportResolutionSelect");
+  const cameraModeSelect = document.getElementById("exportCameraModeSelect");
+  const fpsInput = document.getElementById("exportFpsInput");
+  const speedInput = document.getElementById("exportSpeedInput");
+
+  populateSelect(
+    resolutionSelect,
+    EXPORT_OPTIONS.resolutionPresets,
+    EXPORT_OPTIONS.defaults.resolutionId,
+  );
+  populateSelect(
+    cameraModeSelect,
+    EXPORT_OPTIONS.cameraModes,
+    EXPORT_OPTIONS.defaults.cameraMode,
+  );
+
+  if (fpsInput instanceof HTMLInputElement) {
+    fpsInput.value = String(EXPORT_OPTIONS.defaults.fps);
+  }
+
+  if (speedInput instanceof HTMLInputElement) {
+    speedInput.value = String(EXPORT_OPTIONS.defaults.speedMultiplier);
+  }
+}
+
+function updateExportUi(statusUpdate) {
+  const currentFrame = statusUpdate.currentFrame || 0;
+  const totalFrames = statusUpdate.totalFrames || 0;
+
+  setTextContent("exportStatus", statusUpdate.status || "Idle");
+  setTextContent("exportPhase", statusUpdate.phase || "-");
+  setTextContent(
+    "exportProgress",
+    totalFrames ? formatFrameProgress(currentFrame, totalFrames) : "-",
+  );
+  setTextContent("exportMessage", statusUpdate.message || "Idle.");
+
+  exportUiState.isExporting = ["starting", "running", "encoding"].includes(
+    statusUpdate.status,
+  );
+  setElementDisabled("startExportButton", exportUiState.isExporting);
+  setElementDisabled("cancelExportButton", !exportUiState.isExporting);
+  setElementDisabled("exportResolutionSelect", exportUiState.isExporting);
+  setElementDisabled("exportFpsInput", exportUiState.isExporting);
+  setElementDisabled("exportSpeedInput", exportUiState.isExporting);
+  setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
+}
+
+function readExportSettings() {
+  const resolutionSelect = document.getElementById("exportResolutionSelect");
+  const fpsInput = document.getElementById("exportFpsInput");
+  const speedInput = document.getElementById("exportSpeedInput");
+  const cameraModeSelect = document.getElementById("exportCameraModeSelect");
+
+  return {
+    resolutionId:
+      resolutionSelect instanceof HTMLSelectElement
+        ? resolutionSelect.value
+        : EXPORT_OPTIONS.defaults.resolutionId,
+    fps:
+      fpsInput instanceof HTMLInputElement
+        ? Number(fpsInput.value)
+        : EXPORT_OPTIONS.defaults.fps,
+    speedMultiplier:
+      speedInput instanceof HTMLInputElement
+        ? Number(speedInput.value)
+        : EXPORT_OPTIONS.defaults.speedMultiplier,
+    cameraMode:
+      cameraModeSelect instanceof HTMLSelectElement
+        ? cameraModeSelect.value
+        : EXPORT_OPTIONS.defaults.cameraMode,
+  };
+}
+
+function setupExportControls() {
+  const startExportButton = document.getElementById("startExportButton");
+  const cancelExportButton = document.getElementById("cancelExportButton");
+
+  window.bikeFlyOverApp?.onExportStatus((statusUpdate) => {
+    updateExportUi(statusUpdate);
+  });
+
+  startExportButton?.addEventListener("click", async () => {
+    updateExportUi({
+      status: "starting",
+      phase: "preparing",
+      message: "Opening save dialog and preparing the current viewer for export.",
+      currentFrame: 0,
+      totalFrames: 0,
+    });
+
+    try {
+      const result = await window.bikeFlyOverApp.startExport(readExportSettings());
+
+      if (result?.cancelled) {
+        updateExportUi({
+          status: "idle",
+          phase: "-",
+          message: "Export cancelled before rendering started.",
+          currentFrame: 0,
+          totalFrames: 0,
+        });
+      }
+    } catch (error) {
+      updateExportUi({
+        status: "failed",
+        phase: "error",
+        message: error instanceof Error ? error.message : String(error),
+        currentFrame: 0,
+        totalFrames: 0,
+      });
+    }
+  });
+
+  cancelExportButton?.addEventListener("click", async () => {
+    try {
+      await window.bikeFlyOverApp.cancelExport();
+    } catch (error) {
+      updateExportUi({
+        status: "failed",
+        phase: "error",
+        message: error instanceof Error ? error.message : String(error),
+        currentFrame: 0,
+        totalFrames: 0,
+      });
+    }
+  });
+}
+
+function createPreviewSnapshot(playbackState) {
+  return {
+    cameraMode: playbackState.camera.mode,
+    currentTimestamp: playbackState.currentTimestamp,
+    isPlaying: playbackState.isPlaying,
+    speedMultiplier: playbackState.speedMultiplier,
+  };
+}
+
+function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
+  if (!previewSnapshot) {
+    return;
+  }
+
+  playbackState.export.cancelRequested = false;
+  playbackState.speedMultiplier = previewSnapshot.speedMultiplier;
+  playbackState.camera.mode = previewSnapshot.cameraMode;
+  playbackState.isPlaying = false;
+  resetFollowCameraSmoothing(playbackState);
+  setPlaybackTimestamp(viewer, playbackState, previewSnapshot.currentTimestamp);
+
+  if (previewSnapshot.isPlaying) {
+    startPlayback(viewer, playbackState);
+  }
+}
+
+function waitForNextRender(scene, timeoutMs, isCancelled) {
+  if (isCancelled()) {
+    return Promise.reject(new Error("Export cancelled."));
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      window.clearTimeout(timeoutId);
+      scene.postRender.removeEventListener(onPostRender);
+    };
+
+    const rejectWithError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const onPostRender = () => {
+      if (isCancelled()) {
+        rejectWithError(new Error("Export cancelled."));
+        return;
+      }
+
+      cleanup();
+      resolve();
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      rejectWithError(
+        new Error(`Timed out waiting for Cesium to render within ${timeoutMs}ms.`),
+      );
+    }, timeoutMs);
+
+    scene.postRender.addEventListener(onPostRender);
+    scene.requestRender();
+  });
+}
+
+async function settleSceneForCapture(viewer, settings, isCancelled) {
+  const scene = viewer.scene;
+  let stablePasses = 0;
+  let lastQueueLength = scene.globe.tilesLoaded ? 0 : 1;
+
+  const onTileLoadProgress = (queueLength) => {
+    lastQueueLength = queueLength;
+  };
+
+  scene.globe.tileLoadProgressEvent.addEventListener(onTileLoadProgress);
+
+  try {
+    while (stablePasses < settings.settleStablePasses) {
+      await waitForNextRender(scene, settings.settleTimeoutMs, isCancelled);
+
+      if (scene.globe.tilesLoaded && lastQueueLength === 0) {
+        stablePasses += 1;
+      } else {
+        stablePasses = 0;
+      }
+    }
+
+    await waitForNextRender(scene, settings.settleTimeoutMs, isCancelled);
+  } finally {
+    scene.globe.tileLoadProgressEvent.removeEventListener(onTileLoadProgress);
+  }
+}
+
+async function renderExportFrame(viewer, playbackState, payload) {
+  stopPlayback(playbackState);
+  playbackState.isPlaying = false;
+  playbackState.speedMultiplier = payload.settings.speedMultiplier;
+  playbackState.camera.mode = payload.settings.cameraMode;
+  resetFollowCameraSmoothing(playbackState);
+  setPlaybackTimestamp(viewer, playbackState, payload.activityTimestamp, {
+    updateUi: false,
+    deterministicCamera: true,
+  });
+  await settleSceneForCapture(viewer, payload.settings, () => {
+    return playbackState.export.cancelRequested;
+  });
+}
+
+function setupExportRenderBridge(viewer, playbackState) {
+  const exportBridgeState = {
+    previewSnapshot: null,
+  };
+
+  window.bikeFlyOverApp?.onExportCancel(() => {
+    playbackState.export.cancelRequested = true;
+  });
+
+  window.bikeFlyOverApp?.onExportPrepare(async (payload) => {
+    exportBridgeState.previewSnapshot = createPreviewSnapshot(playbackState);
+
+    if (playbackState.isPlaying) {
+      pausePlayback(viewer, playbackState);
+    } else {
+      stopPlayback(playbackState);
+      playbackState.isPlaying = false;
+    }
+
+    playbackState.export.cancelRequested = false;
+    document.body.classList.add("export-session-active");
+    viewer.resize();
+    playbackState.speedMultiplier = payload.settings.speedMultiplier;
+    playbackState.camera.mode = payload.settings.cameraMode;
+    resetFollowCameraSmoothing(playbackState);
+    setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
+      updateUi: false,
+      deterministicCamera: true,
+    });
+
+    try {
+      await settleSceneForCapture(viewer, payload.settings, () => false);
+      window.bikeFlyOverApp.notifyExportPrepared();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.stack || error.message : String(error);
+      window.bikeFlyOverApp.notifyError(message, {
+        mode: RENDER_MODE,
+      });
+    }
+  });
+
+  window.bikeFlyOverApp?.onExportReset(() => {
+    document.body.classList.remove("export-session-active");
+    viewer.resize();
+    restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
+    exportBridgeState.previewSnapshot = null;
+  });
+
+  window.bikeFlyOverApp?.onRenderExportFrame(async (payload) => {
+    playbackState.export.cancelRequested = false;
+
+    try {
+      await renderExportFrame(viewer, playbackState, payload);
+      window.bikeFlyOverApp.notifyExportFrameSettled({
+        frameIndex: payload.frameIndex,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.stack || error.message : String(error);
+      window.bikeFlyOverApp.notifyError(message, {
+        frameIndex: payload.frameIndex,
+        mode: RENDER_MODE,
+      });
+    }
+  });
+}
+
 async function initializeApp() {
+  document.body.classList.toggle("export-mode", RENDER_MODE === "export");
+
   try {
     setRouteStatus("Loading satellite basemap...");
-    const viewer = createViewer();
+    const viewer = createViewer(RENDER_MODE);
     const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
-    const playbackState = createPlaybackState(sampleTrack.trackpoints);
-    const { routeEntity, routePositions } = addRouteEntities(viewer, sampleTrack);
+    const playbackState = createPlaybackState(sampleTrack.trackpoints, {
+      speedMultiplier: EXPORT_OPTIONS.defaults.speedMultiplier,
+      cameraMode: EXPORT_OPTIONS.defaults.cameraMode,
+    });
+    const { routeBoundingSphere, routeEntity, routePositions } = addRouteEntities(
+      viewer,
+      sampleTrack,
+    );
+
     playbackState.routePositions = routePositions;
+    playbackState.camera.routeBoundingSphere = routeBoundingSphere;
     playbackState.camera.routeEntity = routeEntity;
+
     addPlaybackEntities(viewer, playbackState);
     renderSummary(sampleTrack);
-    syncPlaybackState(viewer, playbackState);
-    await frameRoute(viewer, routeEntity);
-    updateFollowCamera(viewer, playbackState);
+    setOverviewCamera(viewer, playbackState);
+    setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
+      deterministicCamera: RENDER_MODE === "export",
+      updateUi: RENDER_MODE !== "export",
+    });
 
     window.bikeFlyOverViewer = viewer;
     window.sampleTrack = sampleTrack;
     window.sampleRouteEntity = routeEntity;
     window.playbackState = playbackState;
 
-    updatePlaybackUI(playbackState);
-    updateCameraUI(playbackState);
-    setupPlaybackControls(viewer, playbackState);
-    startPlayback(viewer, playbackState);
-    console.log("BikeFlyOver sample track summary:", sampleTrack.summary);
-    setRouteStatus(
-      `Completed route is bold blue; upcoming route stays thin white.`,
-    );
-    setStatus(
-      `Following ${sampleTrack.fileName} with a trailing 3D camera.`,
-    );
-    window.bikeFlyOverApp?.notifyReady();
+    if (RENDER_MODE === "preview") {
+      updatePlaybackUI(playbackState);
+      updateCameraUI(playbackState);
+      populateExportControls();
+      setupExportRenderBridge(viewer, playbackState);
+      setupPlaybackControls(viewer, playbackState);
+      setupExportControls();
+      startPlayback(viewer, playbackState);
+      setRouteStatus(
+        "Completed route is bright blue; upcoming route stays thin white.",
+      );
+      setStatus(`Following ${sampleTrack.fileName} with a trailing 3D camera.`);
+    }
+
+    window.bikeFlyOverApp?.notifyReady({
+      mode: RENDER_MODE,
+    });
   } catch (error) {
     console.error(error);
 
@@ -721,7 +1130,9 @@ async function initializeApp() {
       error instanceof Error ? error.stack || error.message : String(error);
 
     setStatus("Cesium initialization failed.");
-    window.bikeFlyOverApp?.notifyError(message);
+    window.bikeFlyOverApp?.notifyError(message, {
+      mode: RENDER_MODE,
+    });
   }
 }
 
