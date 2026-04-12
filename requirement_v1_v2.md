@@ -76,8 +76,15 @@ These capabilities already exist in the current proof of concept and should be t
 | F-52 |  | Reliability | Improve imagery/provider failure handling with clear retry and abort messaging | Mentioned in the export plan risks | Partial |
 | F-53 |  | Reliability | Add import validation for malformed/empty TCX and FIT files | Needed for real-world usage | Partial |
 | F-54 |  | Reliability | Add automated tests for import parsing, playback synchronization, export frame math, and project persistence | Required by the quality goals in the spec | Partial |
-| F-55 |  | Platform | Define supported targets for desktop first, then mobile if still in scope | The current POC is desktop-focused while the spec mentions mobile | Not implemented |
-| F-56 |  | Platform | Add packaging/distribution for macOS, Windows, and Linux | Required for actual desktop delivery | Not implemented |
+| F-55 |  | Bug fix | Prevent the track line from visually floating too high above the ground or terrain | Fixes an obvious visual defect in route rendering | Partial |
+| F-56 |  | Bug fix | Ensure route markers and played-route highlight stay aligned with the same altitude/terrain strategy as the base track | Avoids mismatched route geometry during playback | Partial |
+| F-57 |  | Bug fix | Fix follow-camera drift, jitter, or overshoot on tight turns and steep elevation changes | Improves preview and export quality | Partial |
+| F-58 |  | Bug fix | Ensure export layout fully restores the normal POC layout after success, failure, or cancellation | Prevents UI state regressions after export | Partial |
+| F-59 |  | Bug fix | Ensure export captures only the Cesium viewport and never includes hidden UI chrome or resize artifacts | Prevents bad MP4 output frames | Partial |
+| F-60 |  | Bug fix | Handle window resize edge cases so low-resolution exports do not break the preview layout or controls | Important now that multiple export resolutions exist | Partial |
+| F-61 |  | Bug fix | Prevent timeline/playback state from jumping unexpectedly after export ends | Keeps editing workflow predictable | Partial |
+| F-62 |  | Platform | Define supported targets for desktop first, then mobile if still in scope | The current POC is desktop-focused while the spec mentions mobile | Not implemented |
+| F-63 |  | Platform | Add packaging/distribution for macOS, Windows, and Linux | Required for actual desktop delivery | Not implemented |
 
 ## Suggested grouping for release planning
 
@@ -104,3 +111,4 @@ These capabilities already exist in the current proof of concept and should be t
 - The current POC already covers a useful baseline for playback and MP4 export, so the next document versions should focus on turning the sample-driven prototype into a real project-based editor.
 - GUI enhancements and performance enhancements are listed explicitly because they will become critical once imports, media, overlays, and project persistence are added.
 - The scrollable control panel is already present in the POC, but it should remain an explicit requirement so future UI changes do not regress it.
+- Known visual and workflow bugs are listed in the same matrix so they can be prioritized and assigned to `v1` or `v2` together with feature work.
