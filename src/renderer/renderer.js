@@ -114,15 +114,35 @@ function formatMediaType(mediaType) {
 }
 
 function formatTimestampMetadataStatus(status) {
-  if (status === "pending") {
-    return "Timestamp metadata pending extraction";
+  if (status === "extracted") {
+    return "Timestamp metadata extracted";
   }
 
   if (status === "missing") {
     return "Timestamp metadata unavailable";
   }
 
+  if (status === "error") {
+    return "Timestamp metadata read failed";
+  }
+
   return "Timestamp metadata unknown";
+}
+
+function formatMediaTimestampDetails(item) {
+  if (item.timestampMetadataStatus === "extracted" && item.capturedAt) {
+    return `${formatTimestamp(item.capturedAt)} · ${item.timestampSource}`;
+  }
+
+  if (item.timestampMetadataStatus === "missing") {
+    return "No usable timestamp metadata found";
+  }
+
+  if (item.timestampMetadataStatus === "error") {
+    return item.timestampMetadataError || "Metadata extraction failed";
+  }
+
+  return "Timestamp metadata pending extraction";
 }
 
 function renderSummary(sampleTrack) {
@@ -876,7 +896,11 @@ function updateMediaLibraryUi() {
       item.timestampMetadataStatus,
     );
 
-    listItem.append(name, meta, status);
+    const timestampDetails = document.createElement("p");
+    timestampDetails.className = "media-library-meta";
+    timestampDetails.textContent = formatMediaTimestampDetails(item);
+
+    listItem.append(name, meta, status, timestampDetails);
     mediaLibraryList.append(listItem);
   }
 }
@@ -896,9 +920,12 @@ function setupMediaLibraryControls() {
           mediaLibraryState.items,
           result.mediaItems,
         );
+        const extractedCount = result.mediaItems.filter((item) => {
+          return item.timestampMetadataStatus === "extracted";
+        }).length;
         mediaLibraryState.statusMessage =
           result.mediaItems.length > 0
-            ? `Imported ${result.mediaItems.length} media item${result.mediaItems.length === 1 ? "" : "s"}.`
+            ? `Imported ${result.mediaItems.length} media item${result.mediaItems.length === 1 ? "" : "s"}; extracted ${extractedCount} timestamp${extractedCount === 1 ? "" : "s"}.`
             : "No supported media files were added.";
       } else if (result?.cancelled) {
         mediaLibraryState.statusMessage =

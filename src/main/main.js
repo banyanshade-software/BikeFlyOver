@@ -7,6 +7,10 @@ const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const ffmpegPath = require("ffmpeg-static");
 const { loadSampleTrack } = require("../shared/sample-track");
 const {
+  detectMediaType,
+  extractMediaTimestampMetadata,
+} = require("../shared/media-metadata");
+const {
   EXPORT_DEFAULTS,
   computeExportFrameCount,
   formatFrameFileName,
@@ -88,33 +92,31 @@ function emitExportStatus(payload) {
   mainWindow?.webContents.send("export-status", payload);
 }
 
-function normalizeImportedMediaPaths(filePaths) {
-  return filePaths.flatMap((filePath) => {
-    const extension = path.extname(filePath).toLowerCase();
-    const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".heic"]);
-    const videoExtensions = new Set([".mp4", ".mov"]);
-    let mediaType = null;
+async function normalizeImportedMediaPaths(filePaths) {
+  const importedMedia = await Promise.all(
+    filePaths.map(async (filePath) => {
+      const mediaType = detectMediaType(filePath);
 
-    if (imageExtensions.has(extension)) {
-      mediaType = "image";
-    } else if (videoExtensions.has(extension)) {
-      mediaType = "video";
-    }
+      if (!mediaType) {
+        return null;
+      }
 
-    if (!mediaType) {
-      return [];
-    }
+      const timestampMetadata = await extractMediaTimestampMetadata(
+        filePath,
+        mediaType,
+      );
 
-    return [
-      {
+      return {
         id: randomUUID(),
         filePath,
         fileName: path.basename(filePath),
         mediaType,
-        timestampMetadataStatus: "pending",
-      },
-    ];
-  });
+        ...timestampMetadata,
+      };
+    }),
+  );
+
+  return importedMedia.filter(Boolean);
 }
 
 async function importMediaFiles() {
@@ -147,7 +149,7 @@ async function importMediaFiles() {
 
   return {
     cancelled: false,
-    mediaItems: normalizeImportedMediaPaths(result.filePaths),
+    mediaItems: await normalizeImportedMediaPaths(result.filePaths),
   };
 }
 
