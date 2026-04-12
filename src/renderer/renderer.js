@@ -28,6 +28,16 @@ const mediaLibraryState = {
   statusMessage: "No media imported yet.",
 };
 const TIMELINE_SLIDER_MAX = 1000;
+const TIMELINE_SCRUB_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+]);
 
 function setStatus(message) {
   const statusElement = document.getElementById("status");
@@ -1014,7 +1024,7 @@ function endTimelineInteraction(viewer, playbackState) {
   }
 
   const shouldResume = playbackState.ui.resumePlaybackAfterTimelineInteraction;
- 
+
   playbackState.ui.isTimelineInteracting = false;
   playbackState.ui.resumePlaybackAfterTimelineInteraction = false;
   updatePlaybackUI(playbackState);
@@ -1054,19 +1064,41 @@ function setupPlaybackControls(viewer, playbackState) {
     switchCameraMode(viewer, playbackState);
   });
 
-  timelineSlider?.addEventListener("input", (event) => {
-    beginTimelineInteraction(viewer, playbackState);
-    seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
-  });
+  if (timelineSlider instanceof HTMLInputElement) {
+    timelineSlider.addEventListener("pointerdown", () => {
+      beginTimelineInteraction(viewer, playbackState);
+    });
 
-  timelineSlider?.addEventListener("change", (event) => {
-    seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
-    endTimelineInteraction(viewer, playbackState);
-  });
+    timelineSlider.addEventListener("pointerup", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
 
-  timelineSlider?.addEventListener("blur", () => {
-    endTimelineInteraction(viewer, playbackState);
-  });
+    timelineSlider.addEventListener("keydown", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        beginTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineSlider.addEventListener("keyup", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        endTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineSlider.addEventListener("input", (event) => {
+      beginTimelineInteraction(viewer, playbackState);
+      seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
+    });
+
+    timelineSlider.addEventListener("change", (event) => {
+      seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineSlider.addEventListener("blur", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+  }
 }
 
 function populateSelect(selectElement, items, selectedId) {

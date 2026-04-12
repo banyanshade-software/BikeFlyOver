@@ -30,7 +30,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-06 |v3  | Import | Handle segment transitions with visible “fly jump” behavior | Explicitly requested in the spec | Not implemented |
 | F-07 |v3  | Data model | Replace bundled sample-only loading with project-level imported asset management | Needed to move from POC to real product | Partial |
 | F-08 |v1  | Timeline | Add a timeline slider for current track position | Explicitly requested in the GUI spec | Implemented |
-| F-09 |v3  | Timeline | Allow scrubbing to any timestamp without restarting playback | Core editing and preview capability | Not implemented |
+| F-09 |v3  | Timeline | Allow scrubbing to any timestamp without restarting playback | Core editing and preview capability | Implemented |
 | F-10 |v1  | Timeline | Show elapsed time, total duration, and current track position in a richer timeline header | Better navigation and editing context | Partial |
 | F-11 |v3  | Timeline | Add frame-accurate stepping controls for export review | Helps verify key camera and media moments | Not implemented |
 | F-12 |v3  | Timeline | Add playback loop/range preview for selected sections | Useful for editing and export iteration | Not implemented |
