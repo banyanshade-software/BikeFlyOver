@@ -27,6 +27,7 @@ body {
   display: grid;
   grid-template-rows: auto 1fr;
   height: 100%;
+  min-height: 0;
 }
 
 .app-header {
@@ -63,14 +64,21 @@ body {
 .viewer-layout {
   display: grid;
   grid-template-columns: 320px 1fr;
+  height: 100%;
   min-height: 0;
 }
 
 .summary-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  block-size: 100%;
   padding: 1rem 1.25rem;
   background: rgba(7, 18, 29, 0.86);
   border-right: 1px solid rgba(121, 189, 255, 0.2);
   overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .summary-panel h2 {
@@ -237,6 +245,8 @@ body {
 .viewer-panel {
   width: 100%;
   height: 100%;
+  min-width: 0;
+  min-height: 0;
 }
 
 .export-mode .app-header,
@@ -269,6 +279,7 @@ body {
   }
 
   .summary-panel {
+    block-size: auto;
     border-right: 0;
     border-bottom: 1px solid rgba(121, 189, 255, 0.2);
   }

@@ -57,7 +57,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-33 |v3  | Project | Save project locally with references to imported traces, media, timeline edits, camera setup, and export settings | Required by the spec | Not implemented |
 | F-34 |v3  | Project | Load previously saved projects | Required by the spec | Not implemented |
 | F-35 |v3  | Project | Detect missing files when reopening a project and offer relinking | Required for a usable desktop workflow | Not implemented |
-| F-36 |v1  | GUI enhancement | Keep the control panel scrollable on all supported window sizes and long forms | Already partly present; should be preserved and hardened | Partial |
+| F-36 |v1  | GUI enhancement | Keep the control panel scrollable on all supported window sizes and long forms | Already partly present; should be preserved and hardened | Implemented |
 | F-37 |v2  | GUI enhancement | Add a resizable split layout between control panel and viewer | Improves usability on large and small screens | Not implemented |
 | F-38 |v2  | GUI enhancement | Add collapsible control sections (Import, Timeline, Camera, Overlay, Export) | Reduces clutter as features grow | Not implemented |
 | F-39 |v2  | GUI enhancement | Add sticky playback/export status area while scrolling the control panel | Keeps critical controls visible | Not implemented |
