@@ -27,6 +27,9 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
       cameraModes: EXPORT_CAMERA_MODES,
     };
   },
+  importMedia() {
+    return ipcRenderer.invoke("media-import");
+  },
   startExport(settings) {
     return ipcRenderer.invoke("export-start", settings);
   },

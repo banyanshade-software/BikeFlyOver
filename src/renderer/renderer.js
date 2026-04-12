@@ -23,6 +23,12 @@ const exportUiState = {
   isExporting: false,
 };
 
+const mediaLibraryState = {
+  isImporting: false,
+  items: [],
+  statusMessage: "No media imported yet.",
+};
+
 function setStatus(message) {
   const statusElement = document.getElementById("status");
 
@@ -103,6 +109,22 @@ function formatFrameProgress(currentFrame, totalFrames) {
   return `${currentFrame} / ${totalFrames}`;
 }
 
+function formatMediaType(mediaType) {
+  return mediaType === "video" ? "Video" : "Image";
+}
+
+function formatTimestampMetadataStatus(status) {
+  if (status === "pending") {
+    return "Timestamp metadata pending extraction";
+  }
+
+  if (status === "missing") {
+    return "Timestamp metadata unavailable";
+  }
+
+  return "Timestamp metadata unknown";
+}
+
 function renderSummary(sampleTrack) {
   const summaryList = document.getElementById("summaryList");
 
@@ -174,6 +196,22 @@ function createPlaybackState(trackpoints, options = {}) {
       cancelRequested: false,
     },
   };
+}
+
+function mergeImportedMedia(existingItems, importedItems) {
+  const byPath = new Map(
+    existingItems.map((item) => {
+      return [item.filePath, item];
+    }),
+  );
+
+  for (const item of importedItems) {
+    byPath.set(item.filePath, item);
+  }
+
+  return Array.from(byPath.values()).sort((left, right) => {
+    return left.fileName.localeCompare(right.fileName);
+  });
 }
 
 function buildRoutePositions(Cesium, trackpoints) {
@@ -788,6 +826,96 @@ function populateExportControls() {
   }
 }
 
+function updateMediaLibraryUi() {
+  const mediaLibraryList = document.getElementById("mediaLibraryList");
+  const itemCount = mediaLibraryState.items.length;
+
+  setTextContent(
+    "mediaLibraryCount",
+    `${itemCount} imported item${itemCount === 1 ? "" : "s"}`,
+  );
+
+  if (mediaLibraryState.isImporting) {
+    setTextContent("mediaLibraryStatus", "Importing media files...");
+  } else {
+    setTextContent("mediaLibraryStatus", mediaLibraryState.statusMessage);
+  }
+
+  setElementDisabled(
+    "importMediaButton",
+    mediaLibraryState.isImporting || exportUiState.isExporting,
+  );
+
+  if (!(mediaLibraryList instanceof HTMLUListElement)) {
+    return;
+  }
+
+  if (itemCount === 0) {
+    mediaLibraryList.innerHTML =
+      '<li class="media-library-empty">Imported photos and videos will appear here.</li>';
+    return;
+  }
+
+  mediaLibraryList.innerHTML = "";
+
+  for (const item of mediaLibraryState.items) {
+    const listItem = document.createElement("li");
+    listItem.className = "media-library-item";
+
+    const name = document.createElement("p");
+    name.className = "media-library-name";
+    name.textContent = item.fileName;
+
+    const meta = document.createElement("p");
+    meta.className = "media-library-meta";
+    meta.textContent = `${formatMediaType(item.mediaType)} · ${item.filePath}`;
+
+    const status = document.createElement("p");
+    status.className = "media-library-status";
+    status.textContent = formatTimestampMetadataStatus(
+      item.timestampMetadataStatus,
+    );
+
+    listItem.append(name, meta, status);
+    mediaLibraryList.append(listItem);
+  }
+}
+
+function setupMediaLibraryControls() {
+  const importMediaButton = document.getElementById("importMediaButton");
+
+  importMediaButton?.addEventListener("click", async () => {
+    mediaLibraryState.isImporting = true;
+    updateMediaLibraryUi();
+
+    try {
+      const result = await window.bikeFlyOverApp.importMedia();
+
+      if (!result?.cancelled && Array.isArray(result?.mediaItems)) {
+        mediaLibraryState.items = mergeImportedMedia(
+          mediaLibraryState.items,
+          result.mediaItems,
+        );
+        mediaLibraryState.statusMessage =
+          result.mediaItems.length > 0
+            ? `Imported ${result.mediaItems.length} media item${result.mediaItems.length === 1 ? "" : "s"}.`
+            : "No supported media files were added.";
+      } else if (result?.cancelled) {
+        mediaLibraryState.statusMessage =
+          mediaLibraryState.items.length > 0
+            ? "Import cancelled."
+            : "No media imported yet.";
+      }
+    } catch (error) {
+      mediaLibraryState.statusMessage =
+        error instanceof Error ? error.message : String(error);
+    } finally {
+      mediaLibraryState.isImporting = false;
+      updateMediaLibraryUi();
+    }
+  });
+}
+
 function updateExportUi(statusUpdate) {
   const currentFrame = statusUpdate.currentFrame || 0;
   const totalFrames = statusUpdate.totalFrames || 0;
@@ -809,6 +937,10 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("exportFpsInput", exportUiState.isExporting);
   setElementDisabled("exportSpeedInput", exportUiState.isExporting);
   setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
+  setElementDisabled(
+    "importMediaButton",
+    exportUiState.isExporting || mediaLibraryState.isImporting,
+  );
 }
 
 function readExportSettings() {
@@ -1110,7 +1242,9 @@ async function initializeApp() {
       updatePlaybackUI(playbackState);
       updateCameraUI(playbackState);
       populateExportControls();
+      updateMediaLibraryUi();
       setupExportRenderBridge(viewer, playbackState);
+      setupMediaLibraryControls();
       setupPlaybackControls(viewer, playbackState);
       setupExportControls();
       startPlayback(viewer, playbackState);

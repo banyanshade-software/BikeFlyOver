@@ -1,6 +1,7 @@
 const path = require("node:path");
 const os = require("node:os");
 const fs = require("node:fs/promises");
+const { randomUUID } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const ffmpegPath = require("ffmpeg-static");
@@ -85,6 +86,69 @@ function createMainWindow() {
 
 function emitExportStatus(payload) {
   mainWindow?.webContents.send("export-status", payload);
+}
+
+function normalizeImportedMediaPaths(filePaths) {
+  return filePaths.flatMap((filePath) => {
+    const extension = path.extname(filePath).toLowerCase();
+    const imageExtensions = new Set([".jpg", ".jpeg", ".png", ".heic"]);
+    const videoExtensions = new Set([".mp4", ".mov"]);
+    let mediaType = null;
+
+    if (imageExtensions.has(extension)) {
+      mediaType = "image";
+    } else if (videoExtensions.has(extension)) {
+      mediaType = "video";
+    }
+
+    if (!mediaType) {
+      return [];
+    }
+
+    return [
+      {
+        id: randomUUID(),
+        filePath,
+        fileName: path.basename(filePath),
+        mediaType,
+        timestampMetadataStatus: "pending",
+      },
+    ];
+  });
+}
+
+async function importMediaFiles() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Import photos and videos",
+    buttonLabel: "Import media",
+    properties: ["openFile", "multiSelections"],
+    filters: [
+      {
+        name: "Media",
+        extensions: ["jpg", "jpeg", "png", "heic", "mp4", "mov"],
+      },
+      {
+        name: "Images",
+        extensions: ["jpg", "jpeg", "png", "heic"],
+      },
+      {
+        name: "Videos",
+        extensions: ["mp4", "mov"],
+      },
+    ],
+  });
+
+  if (result.canceled) {
+    return {
+      cancelled: true,
+      mediaItems: [],
+    };
+  }
+
+  return {
+    cancelled: false,
+    mediaItems: normalizeImportedMediaPaths(result.filePaths),
+  };
 }
 
 async function promptForExportPath(sampleTrack) {
@@ -455,6 +519,10 @@ app.whenReady().then(() => {
 
   ipcMain.handle("export-start", async (_event, settings) => {
     return startExport(settings);
+  });
+
+  ipcMain.handle("media-import", async () => {
+    return importMediaFiles();
   });
 
   ipcMain.handle("export-cancel", async () => {

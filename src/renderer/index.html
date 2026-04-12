@@ -91,6 +91,25 @@
               </div>
             </dl>
           </section>
+          <section class="controls-panel" aria-label="Media library">
+            <h2>Media library</h2>
+            <div class="button-row">
+              <button id="importMediaButton" type="button">Import media</button>
+            </div>
+            <dl class="summary-list summary-list--compact">
+              <div>
+                <dt>Items</dt>
+                <dd id="mediaLibraryCount">0 imported</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd id="mediaLibraryStatus">No media imported yet.</dd>
+              </div>
+            </dl>
+            <ul id="mediaLibraryList" class="media-library-list" aria-live="polite">
+              <li class="media-library-empty">Imported photos and videos will appear here.</li>
+            </ul>
+          </section>
           <section class="controls-panel" aria-label="Export controls">
             <h2>Export MP4</h2>
             <div class="field-stack">
