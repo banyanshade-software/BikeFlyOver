@@ -164,6 +164,25 @@ body {
   outline-offset: 2px;
 }
 
+.timeline-group {
+  gap: 0.6rem;
+}
+
+.timeline-slider {
+  width: 100%;
+  margin: 0;
+  accent-color: #79bdff;
+}
+
+.timeline-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.75rem;
+  font-size: 0.88rem;
+  color: #b8d8f6;
+}
+
 .helper-text {
   margin: 0.85rem 0 0;
   font-size: 0.9rem;

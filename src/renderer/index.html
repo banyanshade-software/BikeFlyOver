@@ -79,6 +79,25 @@
               </div>
             </dl>
           </section>
+          <section class="controls-panel" aria-label="Timeline controls">
+            <h2>Timeline</h2>
+            <label class="field-group timeline-group" for="timelineSlider">
+              <span class="field-label">Current track position</span>
+              <input
+                id="timelineSlider"
+                class="timeline-slider"
+                type="range"
+                min="0"
+                max="1000"
+                step="1"
+                value="0"
+              />
+            </label>
+            <div class="timeline-scale" aria-live="polite">
+              <span id="timelineElapsed">00:00</span>
+              <span id="timelineDuration">00:00</span>
+            </div>
+          </section>
           <section class="controls-panel" aria-label="Camera controls">
             <h2>Camera</h2>
             <div class="button-row">

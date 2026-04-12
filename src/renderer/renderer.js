@@ -27,6 +27,7 @@ const mediaLibraryState = {
   items: [],
   statusMessage: "No media imported yet.",
 };
+const TIMELINE_SLIDER_MAX = 1000;
 
 function setStatus(message) {
   const statusElement = document.getElementById("status");
@@ -98,6 +99,71 @@ function formatAltitude(bounds) {
 
 function formatProgress(progressRatio) {
   return `${(progressRatio * 100).toFixed(1)}%`;
+}
+
+function formatDuration(durationMs) {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function clampProgressRatio(progressRatio) {
+  if (!Number.isFinite(progressRatio)) {
+    return 0;
+  }
+
+  return Math.min(1, Math.max(0, progressRatio));
+}
+
+function getPlaybackProgressRatio(playbackState) {
+  if (playbackState.durationMs <= 0) {
+    return 1;
+  }
+
+  return clampProgressRatio(
+    (playbackState.currentTimestamp - playbackState.startTimestamp) /
+      playbackState.durationMs,
+  );
+}
+
+function progressRatioToTimestamp(playbackState, progressRatio) {
+  if (playbackState.durationMs <= 0) {
+    return playbackState.startTimestamp;
+  }
+
+  return (
+    playbackState.startTimestamp +
+    playbackState.durationMs * clampProgressRatio(progressRatio)
+  );
+}
+
+function sliderValueToTimestamp(playbackState, sliderValue) {
+  return progressRatioToTimestamp(
+    playbackState,
+    Number(sliderValue) / TIMELINE_SLIDER_MAX,
+  );
+}
+
+function timestampToSliderValue(playbackState, timestamp) {
+  if (playbackState.durationMs <= 0) {
+    return TIMELINE_SLIDER_MAX;
+  }
+
+  return String(
+    Math.round(
+      TIMELINE_SLIDER_MAX *
+        clampProgressRatio(
+          (timestamp - playbackState.startTimestamp) / playbackState.durationMs,
+        ),
+    ),
+  );
 }
 
 function formatFrameProgress(currentFrame, totalFrames) {
@@ -246,6 +312,10 @@ function createPlaybackState(trackpoints, options = {}) {
     },
     export: {
       cancelRequested: false,
+    },
+    ui: {
+      isTimelineInteracting: false,
+      resumePlaybackAfterTimelineInteraction: false,
     },
   };
 }
@@ -774,8 +844,8 @@ function updateMarkerPosition(playbackState) {
 
 function updatePlaybackUI(playbackState) {
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
-  const progressRatio =
-    playbackState.durationMs === 0 ? 1 : elapsedMs / playbackState.durationMs;
+  const progressRatio = getPlaybackProgressRatio(playbackState);
+  const timelineSlider = document.getElementById("timelineSlider");
 
   setTextContent("playbackStatus", playbackState.isPlaying ? "Playing" : "Paused");
   setTextContent("playbackProgress", formatProgress(progressRatio));
@@ -784,7 +854,19 @@ function updatePlaybackUI(playbackState) {
     formatTimestamp(playbackState.currentSample.time),
   );
   setTextContent("playbackSpeed", `${playbackState.speedMultiplier}x track time`);
+  setTextContent("timelineElapsed", formatDuration(elapsedMs));
+  setTextContent("timelineDuration", formatDuration(playbackState.durationMs));
   setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
+
+  if (
+    timelineSlider instanceof HTMLInputElement &&
+    !playbackState.ui.isTimelineInteracting
+  ) {
+    timelineSlider.value = timestampToSliderValue(
+      playbackState,
+      playbackState.currentTimestamp,
+    );
+  }
 }
 
 function syncPlaybackState(viewer, playbackState, options = {}) {
@@ -904,6 +986,44 @@ function restartPlayback(viewer, playbackState) {
   startPlayback(viewer, playbackState);
 }
 
+function beginTimelineInteraction(viewer, playbackState) {
+  if (playbackState.ui.isTimelineInteracting) {
+    return;
+  }
+
+  playbackState.ui.isTimelineInteracting = true;
+  playbackState.ui.resumePlaybackAfterTimelineInteraction = playbackState.isPlaying;
+
+  if (playbackState.isPlaying) {
+    pausePlayback(viewer, playbackState);
+  }
+}
+
+function seekPlaybackFromTimeline(viewer, playbackState, sliderValue) {
+  resetFollowCameraSmoothing(playbackState);
+  setPlaybackTimestamp(
+    viewer,
+    playbackState,
+    sliderValueToTimestamp(playbackState, sliderValue),
+  );
+}
+
+function endTimelineInteraction(viewer, playbackState) {
+  if (!playbackState.ui.isTimelineInteracting) {
+    return;
+  }
+
+  const shouldResume = playbackState.ui.resumePlaybackAfterTimelineInteraction;
+ 
+  playbackState.ui.isTimelineInteracting = false;
+  playbackState.ui.resumePlaybackAfterTimelineInteraction = false;
+  updatePlaybackUI(playbackState);
+
+  if (shouldResume) {
+    startPlayback(viewer, playbackState);
+  }
+}
+
 function switchCameraMode(viewer, playbackState) {
   playbackState.camera.mode =
     playbackState.camera.mode === "follow" ? "overview" : "follow";
@@ -915,6 +1035,7 @@ function setupPlaybackControls(viewer, playbackState) {
   const playPauseButton = document.getElementById("playPauseButton");
   const restartButton = document.getElementById("restartButton");
   const cameraModeButton = document.getElementById("cameraModeButton");
+  const timelineSlider = document.getElementById("timelineSlider");
 
   playPauseButton?.addEventListener("click", () => {
     if (playbackState.isPlaying) {
@@ -931,6 +1052,20 @@ function setupPlaybackControls(viewer, playbackState) {
 
   cameraModeButton?.addEventListener("click", () => {
     switchCameraMode(viewer, playbackState);
+  });
+
+  timelineSlider?.addEventListener("input", (event) => {
+    beginTimelineInteraction(viewer, playbackState);
+    seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
+  });
+
+  timelineSlider?.addEventListener("change", (event) => {
+    seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
+    endTimelineInteraction(viewer, playbackState);
+  });
+
+  timelineSlider?.addEventListener("blur", () => {
+    endTimelineInteraction(viewer, playbackState);
   });
 }
 
