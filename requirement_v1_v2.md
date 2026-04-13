@@ -44,7 +44,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-20 |v1  | Media | Place photos/videos on the route timeline using timestamp alignment | Required by the spec | Implemented |
 | F-21 |v2  | Media | Provide UI fields to fix camera/GPS time drift | Explicitly requested in the spec | Not implemented |
 | F-22 |v3  | Media | Preview inserted media in the timeline and viewer | Needed to validate placement before export | Not implemented |
-| F-67 |v1  | Media | Show aligned media in the preview window as a simple thumbnail or card when its timeline position is reached | Gives immediate visual feedback that media placement is working before export | Implemented |
+| F-67 |v1  | Media | Show aligned media as permanent thumbnail/card markers placed on the track in the preview window | Gives immediate visual feedback that media placement is working before export | Implemented |
 | F-68 |v1  | Media | Insert aligned media into the generated video with a simple animation | Turns imported photos/videos into visible output instead of metadata-only timeline items | Implemented |
 | F-23 |v2  | Overlay | Display metrics from the activity file (speed, time, distance, heart rate when available) | Required by the spec | Not implemented |
 | F-24 |v2  | Overlay | Support text and graphical overlays (for example speedometer, stat chips, elevation, BPM) | Required by the spec | Not implemented |

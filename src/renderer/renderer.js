@@ -27,6 +27,7 @@ const mediaLibraryState = {
   items: [],
   statusMessage: "No media imported yet.",
   activePreviewItemId: null,
+  previewEntities: [],
 };
 const TIMELINE_SLIDER_MAX = 1000;
 const MEDIA_PREVIEW_LEAD_IN_MS = 500;
@@ -270,6 +271,23 @@ function formatMediaAlignmentDetails(item) {
   return `${formatTimestamp(item.alignedActivityTime)} · ${trackpointLabel}`;
 }
 
+function escapeSvgText(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;");
+}
+
+function truncateText(value, maxLength) {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 1)}...`;
+}
+
 function getMediaPreviewUrl(filePath) {
   return window.bikeFlyOverApp?.toFileUrl?.(filePath) || "";
 }
@@ -281,6 +299,78 @@ function decorateMediaItemsForPreview(mediaItems) {
       previewUrl: item.previewUrl || getMediaPreviewUrl(item.filePath),
     };
   });
+}
+
+function createMediaPreviewMarkerImage(item) {
+  const kindLabel = item.mediaType === "video" ? "VIDEO" : "PHOTO";
+  const fileLabel = escapeSvgText(truncateText(item.fileName, 18));
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="176" height="104" viewBox="0 0 176 104">
+      <rect x="4" y="4" width="168" height="96" rx="14" fill="rgba(7,18,29,0.92)" stroke="rgba(121,189,255,0.7)" stroke-width="4"/>
+      <rect x="16" y="16" width="144" height="50" rx="10" fill="${item.mediaType === "video" ? "rgba(24,71,107,0.95)" : "rgba(20,88,124,0.95)"}"/>
+      <text x="88" y="47" text-anchor="middle" fill="#f4f8fb" font-family="Inter, Arial, sans-serif" font-size="18" font-weight="700">${kindLabel}</text>
+      <text x="16" y="82" fill="#79bdff" font-family="Inter, Arial, sans-serif" font-size="13" font-weight="700">${kindLabel}</text>
+      <text x="16" y="95" fill="#f4f8fb" font-family="Inter, Arial, sans-serif" font-size="12">${fileLabel}</text>
+    </svg>
+  `.trim();
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function clearMediaPreviewEntities(viewer) {
+  if (!viewer) {
+    mediaLibraryState.previewEntities = [];
+    return;
+  }
+
+  for (const entity of mediaLibraryState.previewEntities) {
+    viewer.entities.remove(entity);
+  }
+
+  mediaLibraryState.previewEntities = [];
+}
+
+function syncMediaPreviewEntities(viewer, trackpoints) {
+  const Cesium = window.Cesium;
+
+  clearMediaPreviewEntities(viewer);
+
+  if (!Cesium) {
+    return;
+  }
+
+  mediaLibraryState.previewEntities = mediaLibraryState.items
+    .filter((item) => {
+      return item.alignmentStatus === "aligned" && Number.isFinite(item.nearestTrackIndex);
+    })
+    .map((item) => {
+      const trackpoint = trackpoints[item.nearestTrackIndex];
+
+      if (!trackpoint) {
+        return null;
+      }
+
+      return viewer.entities.add({
+        id: `media-preview-${item.id}`,
+        position: toRouteDisplayPosition(Cesium, trackpoint),
+        billboard: {
+          image: createMediaPreviewMarkerImage(item),
+          width: 88,
+          height: 52,
+          verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+          pixelOffset: new Cesium.Cartesian2(0, -12),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          scaleByDistance: new Cesium.NearFarScalar(200, 1, 4500, 0.55),
+        },
+      });
+    })
+    .filter(Boolean);
+}
+
+function setMediaPreviewEntitiesVisibility(visible) {
+  for (const entity of mediaLibraryState.previewEntities) {
+    entity.show = visible;
+  }
 }
 
 function getActiveMediaPreviewPresentation(playbackTimestamp) {
@@ -371,8 +461,12 @@ function updateMediaPreviewOverlay(playbackState) {
     return;
   }
 
-  if (RENDER_MODE !== "preview") {
+  if (
+    RENDER_MODE !== "preview" ||
+    !document.body.classList.contains("export-session-active")
+  ) {
     overlayElement.hidden = true;
+    mediaLibraryState.activePreviewItemId = null;
     return;
   }
 
@@ -1574,7 +1668,7 @@ function updateMediaLibraryUi() {
   }
 }
 
-function setupMediaLibraryControls(sampleTrack) {
+function setupMediaLibraryControls(viewer, sampleTrack) {
   const importMediaButton = document.getElementById("importMediaButton");
 
   importMediaButton?.addEventListener("click", async () => {
@@ -1607,6 +1701,7 @@ function setupMediaLibraryControls(sampleTrack) {
           result.mediaItems.length > 0
             ? `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range.`
             : "No supported media files were added.";
+        syncMediaPreviewEntities(viewer, sampleTrack.trackpoints);
       } else if (result?.cancelled) {
         mediaLibraryState.statusMessage =
           mediaLibraryState.items.length > 0
@@ -1868,6 +1963,7 @@ function setupExportRenderBridge(viewer, playbackState) {
 
     playbackState.export.cancelRequested = false;
     document.body.classList.add("export-session-active");
+    setMediaPreviewEntitiesVisibility(false);
     viewer.resize();
     playbackState.speedMultiplier = payload.settings.speedMultiplier;
     playbackState.camera.mode = payload.settings.cameraMode;
@@ -1892,6 +1988,7 @@ function setupExportRenderBridge(viewer, playbackState) {
   window.bikeFlyOverApp?.onExportReset(() => {
     document.body.classList.remove("export-session-active");
     viewer.resize();
+    setMediaPreviewEntitiesVisibility(true);
     restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
     updateMediaPreviewOverlay(playbackState);
     exportBridgeState.previewSnapshot = null;
@@ -1956,7 +2053,7 @@ async function initializeApp() {
       updateMediaLibraryUi();
       updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
-      setupMediaLibraryControls(sampleTrack);
+      setupMediaLibraryControls(viewer, sampleTrack);
       setupPlaybackControls(viewer, playbackState);
       setupExportControls();
       startPlayback(viewer, playbackState);
