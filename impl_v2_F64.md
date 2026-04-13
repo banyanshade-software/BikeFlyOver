@@ -11,12 +11,17 @@ Improve video pacing by accelerating through idle moments and slow segments auto
 
 ## Implementation approach
 
-1. Define a v2 adaptive-speed policy:
+1. Add GUI control to switch between 3 modes :
+	- proportional (current behaviour)
+	- fix speed
+	- adaptative-speed policy (default)
+2. Define a v2 adaptive-speed policy:
    - detect low-speed or idle segments
    - increase time compression there
    - preserve more normal pacing during active movement
-2. Keep the policy deterministic and previewable.
-3. Expose simple controls rather than a full rule editor.
+   - at high speed decrease time compression 
+3. Keep the policy deterministic and previewable.
+4. Expose simple controls rather than a full rule editor.
 
 ## Main files
 
