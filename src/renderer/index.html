@@ -60,7 +60,7 @@
               <button id="playPauseButton" type="button">Pause</button>
               <button id="restartButton" type="button">Restart</button>
             </div>
-            <dl class="summary-list summary-list--compact">
+            <dl class="summary-list summary-list--compact summary-list--two-column">
               <div>
                 <dt>Status</dt>
                 <dd id="playbackStatus">Loading...</dd>
@@ -70,8 +70,20 @@
                 <dd id="playbackProgress">-</dd>
               </div>
               <div>
-                <dt>Current time</dt>
+                <dt>Elapsed</dt>
+                <dd id="playbackElapsed">-</dd>
+              </div>
+              <div>
+                <dt>Duration</dt>
+                <dd id="playbackDuration">-</dd>
+              </div>
+              <div>
+                <dt>Activity time</dt>
                 <dd id="playbackCurrentTime">-</dd>
+              </div>
+              <div>
+                <dt>Distance</dt>
+                <dd id="playbackDistance">-</dd>
               </div>
               <div>
                 <dt>Speed</dt>

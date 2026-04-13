@@ -125,6 +125,18 @@ function formatDuration(durationMs) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
+function formatDistance(distanceMeters) {
+  if (!Number.isFinite(distanceMeters)) {
+    return "N/A";
+  }
+
+  if (Math.abs(distanceMeters) >= 1000) {
+    return `${(distanceMeters / 1000).toFixed(2)} km`;
+  }
+
+  return `${Math.round(distanceMeters)} m`;
+}
+
 function clampProgressRatio(progressRatio) {
   if (!Number.isFinite(progressRatio)) {
     return 0;
@@ -1031,9 +1043,15 @@ function updatePlaybackUI(playbackState) {
 
   setTextContent("playbackStatus", playbackState.isPlaying ? "Playing" : "Paused");
   setTextContent("playbackProgress", formatProgress(progressRatio));
+  setTextContent("playbackElapsed", formatDuration(elapsedMs));
+  setTextContent("playbackDuration", formatDuration(playbackState.durationMs));
   setTextContent(
     "playbackCurrentTime",
     formatTimestamp(playbackState.currentSample.time),
+  );
+  setTextContent(
+    "playbackDistance",
+    formatDistance(playbackState.currentSample.distance),
   );
   setTextContent("playbackSpeed", `${playbackState.speedMultiplier}x track time`);
   setTextContent("timelineElapsed", formatDuration(elapsedMs));
