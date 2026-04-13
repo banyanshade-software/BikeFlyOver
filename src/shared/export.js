@@ -42,12 +42,20 @@ const EXPORT_CAMERA_MODES = [
   { id: "overview", label: "Overview camera" },
 ];
 
+const EXPORT_TIMING_MODES = [
+  { id: "adaptive-speed", label: "Adaptive speed" },
+  { id: "proportional", label: "Proportional track time" },
+  { id: "fixed-speed", label: "Fixed route speed" },
+];
+
 const EXPORT_DEFAULTS = {
   resolutionId: EXPORT_RESOLUTION_PRESETS[0].id,
   width: EXPORT_RESOLUTION_PRESETS[0].width,
   height: EXPORT_RESOLUTION_PRESETS[0].height,
   fps: 30,
+  timingMode: EXPORT_TIMING_MODES[0].id,
   speedMultiplier: 40,
+  adaptiveStrength: 1,
   cameraMode: EXPORT_CAMERA_MODES[0].id,
   settleTimeoutMs: 15000,
   settleStablePasses: 2,
@@ -58,6 +66,14 @@ function getResolutionPresetById(resolutionId) {
   return (
     EXPORT_RESOLUTION_PRESETS.find((preset) => preset.id === resolutionId) || null
   );
+}
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function lerp(start, end, ratio) {
+  return start + (end - start) * ratio;
 }
 
 function normalizePositiveInteger(value, fieldName) {
@@ -94,9 +110,22 @@ function normalizeExportSettings(rawSettings = {}) {
     rawSettings.fps ?? EXPORT_DEFAULTS.fps,
     "fps",
   );
+  const timingMode = EXPORT_TIMING_MODES.some(
+    (mode) => mode.id === rawSettings.timingMode,
+  )
+    ? rawSettings.timingMode
+    : EXPORT_DEFAULTS.timingMode;
   const speedMultiplier = normalizePositiveNumber(
     rawSettings.speedMultiplier ?? EXPORT_DEFAULTS.speedMultiplier,
     "speedMultiplier",
+  );
+  const adaptiveStrength = clamp(
+    normalizePositiveNumber(
+      rawSettings.adaptiveStrength ?? EXPORT_DEFAULTS.adaptiveStrength,
+      "adaptiveStrength",
+    ),
+    0.25,
+    3,
   );
   const settleTimeoutMs = normalizePositiveInteger(
     rawSettings.settleTimeoutMs ?? EXPORT_DEFAULTS.settleTimeoutMs,
@@ -121,7 +150,9 @@ function normalizeExportSettings(rawSettings = {}) {
     width,
     height,
     fps,
+    timingMode,
     speedMultiplier,
+    adaptiveStrength,
     cameraMode,
     settleTimeoutMs,
     settleStablePasses,
@@ -129,35 +160,321 @@ function normalizeExportSettings(rawSettings = {}) {
   };
 }
 
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function getGeodesicDistanceMeters(startTrackpoint, endTrackpoint) {
+  if (
+    !Number.isFinite(startTrackpoint?.latitude) ||
+    !Number.isFinite(startTrackpoint?.longitude) ||
+    !Number.isFinite(endTrackpoint?.latitude) ||
+    !Number.isFinite(endTrackpoint?.longitude)
+  ) {
+    return 0;
+  }
+
+  const earthRadiusMeters = 6371000;
+  const startLatitude = toRadians(startTrackpoint.latitude);
+  const endLatitude = toRadians(endTrackpoint.latitude);
+  const latitudeDelta = endLatitude - startLatitude;
+  const longitudeDelta = toRadians(
+    endTrackpoint.longitude - startTrackpoint.longitude,
+  );
+  const haversine =
+    Math.sin(latitudeDelta / 2) * Math.sin(latitudeDelta / 2) +
+    Math.cos(startLatitude) *
+      Math.cos(endLatitude) *
+      Math.sin(longitudeDelta / 2) *
+      Math.sin(longitudeDelta / 2);
+  const centralAngle =
+    2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+
+  return earthRadiusMeters * centralAngle;
+}
+
+function getSegmentDistanceMeters(startTrackpoint, endTrackpoint) {
+  if (
+    Number.isFinite(startTrackpoint?.distance) &&
+    Number.isFinite(endTrackpoint?.distance)
+  ) {
+    return Math.max(0, endTrackpoint.distance - startTrackpoint.distance);
+  }
+
+  return getGeodesicDistanceMeters(startTrackpoint, endTrackpoint);
+}
+
+function getSegmentSpeedMetersPerSecond(
+  startTrackpoint,
+  endTrackpoint,
+  activityDurationMs,
+) {
+  const sampledSpeeds = [startTrackpoint?.speed, endTrackpoint?.speed].filter(
+    (speed) => Number.isFinite(speed) && speed >= 0,
+  );
+
+  if (sampledSpeeds.length === 2) {
+    return (sampledSpeeds[0] + sampledSpeeds[1]) / 2;
+  }
+
+  if (sampledSpeeds.length === 1) {
+    return sampledSpeeds[0];
+  }
+
+  const activityDurationSeconds = activityDurationMs / 1000;
+
+  if (activityDurationSeconds <= 0) {
+    return 0;
+  }
+
+  return getSegmentDistanceMeters(startTrackpoint, endTrackpoint) /
+    activityDurationSeconds;
+}
+
+function getAdaptiveSegmentMultiplier(segmentSpeedMetersPerSecond, settings) {
+  const baseMultiplier = settings.speedMultiplier;
+  const strength = settings.adaptiveStrength;
+  const idleSpeedThreshold = 0.75;
+  const cruisingSpeedThreshold = 5;
+  const fastSpeedThreshold = 12;
+  const sprintSpeedThreshold = 20;
+  const idleBoost = 1 + strength * 2.2;
+  const fastReduction = clamp(1 - strength * 0.2, 0.5, 1);
+  const sprintReduction = clamp(1 - strength * 0.35, 0.35, 1);
+
+  if (segmentSpeedMetersPerSecond <= idleSpeedThreshold) {
+    return baseMultiplier * idleBoost;
+  }
+
+  if (segmentSpeedMetersPerSecond < cruisingSpeedThreshold) {
+    const ratio =
+      (segmentSpeedMetersPerSecond - idleSpeedThreshold) /
+      (cruisingSpeedThreshold - idleSpeedThreshold);
+
+    return baseMultiplier * lerp(idleBoost, 1, ratio);
+  }
+
+  if (segmentSpeedMetersPerSecond < fastSpeedThreshold) {
+    const ratio =
+      (segmentSpeedMetersPerSecond - cruisingSpeedThreshold) /
+      (fastSpeedThreshold - cruisingSpeedThreshold);
+
+    return baseMultiplier * lerp(1, fastReduction, ratio);
+  }
+
+  const ratio = clamp(
+    (segmentSpeedMetersPerSecond - fastSpeedThreshold) /
+      (sprintSpeedThreshold - fastSpeedThreshold),
+    0,
+    1,
+  );
+
+  return baseMultiplier * lerp(fastReduction, sprintReduction, ratio);
+}
+
+function getTrackAverageSpeedMetersPerSecond(trackpoints) {
+  if (!Array.isArray(trackpoints) || trackpoints.length < 2) {
+    return 0;
+  }
+
+  const totalDistanceMeters = getSegmentDistanceMeters(
+    trackpoints[0],
+    trackpoints[trackpoints.length - 1],
+  );
+  const totalDurationSeconds =
+    (trackpoints[trackpoints.length - 1].timestamp - trackpoints[0].timestamp) /
+    1000;
+
+  if (totalDurationSeconds <= 0 || totalDistanceMeters <= 0) {
+    return 0;
+  }
+
+  return totalDistanceMeters / totalDurationSeconds;
+}
+
+function getSegmentVideoDurationMs(
+  startTrackpoint,
+  endTrackpoint,
+  activityDurationMs,
+  settings,
+  fixedSpeedMetersPerSecond,
+) {
+  if (activityDurationMs <= 0) {
+    return 0;
+  }
+
+  if (settings.timingMode === "fixed-speed") {
+    const distanceMeters = getSegmentDistanceMeters(startTrackpoint, endTrackpoint);
+
+    if (distanceMeters <= 0) {
+      return 0;
+    }
+
+    return (distanceMeters / fixedSpeedMetersPerSecond) * 1000;
+  }
+
+  if (settings.timingMode === "adaptive-speed") {
+    const segmentSpeedMetersPerSecond = getSegmentSpeedMetersPerSecond(
+      startTrackpoint,
+      endTrackpoint,
+      activityDurationMs,
+    );
+    const adaptiveMultiplier = getAdaptiveSegmentMultiplier(
+      segmentSpeedMetersPerSecond,
+      settings,
+    );
+
+    return activityDurationMs / adaptiveMultiplier;
+  }
+
+  return activityDurationMs / settings.speedMultiplier;
+}
+
+function buildExportTimeline({ trackpoints, settings }) {
+  const normalizedSettings = normalizeExportSettings(settings);
+  const safeTrackpoints = Array.isArray(trackpoints) ? trackpoints : [];
+
+  if (safeTrackpoints.length === 0) {
+    return {
+      endTimestamp: 0,
+      segments: [],
+      settings: normalizedSettings,
+      startTimestamp: 0,
+      totalVideoDurationMs: 0,
+    };
+  }
+
+  const startTimestamp = safeTrackpoints[0].timestamp;
+  const endTimestamp = safeTrackpoints[safeTrackpoints.length - 1].timestamp;
+  const fixedSpeedMetersPerSecond = Math.max(
+    1,
+    getTrackAverageSpeedMetersPerSecond(safeTrackpoints) *
+      normalizedSettings.speedMultiplier,
+  );
+  const segments = [];
+  let totalVideoDurationMs = 0;
+
+  for (
+    let trackpointIndex = 0;
+    trackpointIndex < safeTrackpoints.length - 1;
+    trackpointIndex += 1
+  ) {
+    const startTrackpoint = safeTrackpoints[trackpointIndex];
+    const endTrackpoint = safeTrackpoints[trackpointIndex + 1];
+    const activityDurationMs = Math.max(
+      0,
+      endTrackpoint.timestamp - startTrackpoint.timestamp,
+    );
+    const videoDurationMs = getSegmentVideoDurationMs(
+      startTrackpoint,
+      endTrackpoint,
+      activityDurationMs,
+      normalizedSettings,
+      fixedSpeedMetersPerSecond,
+    );
+
+    if (videoDurationMs <= 0) {
+      continue;
+    }
+
+    segments.push({
+      activityDurationMs,
+      activityEndTimestamp: endTrackpoint.timestamp,
+      activityStartTimestamp: startTrackpoint.timestamp,
+      videoDurationMs,
+      videoEndMs: totalVideoDurationMs + videoDurationMs,
+      videoStartMs: totalVideoDurationMs,
+    });
+    totalVideoDurationMs += videoDurationMs;
+  }
+
+  return {
+    endTimestamp,
+    segments,
+    settings: normalizedSettings,
+    startTimestamp,
+    totalVideoDurationMs,
+  };
+}
+
 function computeExportFrameCount({
-  startTimestamp,
   endTimestamp,
+  exportTimeline,
   fps,
   speedMultiplier,
+  startTimestamp,
 }) {
-  const durationMs = Math.max(0, endTimestamp - startTimestamp);
+  const videoDurationMs = exportTimeline
+    ? exportTimeline.totalVideoDurationMs
+    : Math.max(0, endTimestamp - startTimestamp) / speedMultiplier;
 
-  if (durationMs === 0) {
+  if (videoDurationMs === 0) {
     return 1;
   }
 
-  const videoDurationSeconds = durationMs / (speedMultiplier * 1000);
-
-  return Math.max(1, Math.ceil(videoDurationSeconds * fps) + 1);
+  return Math.max(1, Math.ceil((videoDurationMs / 1000) * fps) + 1);
 }
 
 function getExportActivityTimestamp({
-  startTimestamp,
   endTimestamp,
+  exportTimeline,
   frameIndex,
   fps,
   speedMultiplier,
+  startTimestamp,
 }) {
-  const videoTimeSeconds = frameIndex / fps;
-  const activityTimestamp =
-    startTimestamp + videoTimeSeconds * speedMultiplier * 1000;
+  if (!exportTimeline) {
+    const videoTimeSeconds = frameIndex / fps;
+    const activityTimestamp =
+      startTimestamp + videoTimeSeconds * speedMultiplier * 1000;
 
-  return Math.min(endTimestamp, Math.max(startTimestamp, activityTimestamp));
+    return Math.min(endTimestamp, Math.max(startTimestamp, activityTimestamp));
+  }
+
+  if (exportTimeline.segments.length === 0) {
+    return exportTimeline.startTimestamp;
+  }
+
+  const videoTimeMs = Math.min(
+    exportTimeline.totalVideoDurationMs,
+    Math.max(0, (frameIndex / fps) * 1000),
+  );
+
+  if (videoTimeMs <= 0) {
+    return exportTimeline.startTimestamp;
+  }
+
+  if (videoTimeMs >= exportTimeline.totalVideoDurationMs) {
+    return exportTimeline.endTimestamp;
+  }
+
+  let low = 0;
+  let high = exportTimeline.segments.length - 1;
+
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+
+    if (videoTimeMs < exportTimeline.segments[middle].videoEndMs) {
+      high = middle;
+    } else {
+      low = middle + 1;
+    }
+  }
+
+  const segment = exportTimeline.segments[low];
+  const segmentRatio = clamp(
+    (videoTimeMs - segment.videoStartMs) / segment.videoDurationMs,
+    0,
+    1,
+  );
+
+  return Math.min(
+    exportTimeline.endTimestamp,
+    Math.max(
+      exportTimeline.startTimestamp,
+      segment.activityStartTimestamp + segment.activityDurationMs * segmentRatio,
+    ),
+  );
 }
 
 function formatFrameFileName(frameNumber) {
@@ -168,6 +485,8 @@ module.exports = {
   EXPORT_CAMERA_MODES,
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
+  EXPORT_TIMING_MODES,
+  buildExportTimeline,
   computeExportFrameCount,
   formatFrameFileName,
   getExportActivityTimestamp,

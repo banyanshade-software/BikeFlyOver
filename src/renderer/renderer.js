@@ -4,7 +4,9 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     width: 1280,
     height: 720,
     fps: 30,
+    timingMode: "adaptive-speed",
     speedMultiplier: 40,
+    adaptiveStrength: 1,
     cameraMode: "follow",
     settleTimeoutMs: 15000,
     settleStablePasses: 2,
@@ -12,6 +14,7 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
   },
   resolutionPresets: [],
   cameraModes: [],
+  timingModes: [],
 };
 const RENDER_MODE =
   new URLSearchParams(window.location.search).get("mode") === "export"
@@ -101,6 +104,14 @@ function setElementDisabled(elementId, disabled) {
 
   if (element instanceof HTMLSelectElement) {
     element.disabled = disabled;
+  }
+}
+
+function setElementHidden(elementId, hidden) {
+  const element = document.getElementById(elementId);
+
+  if (element instanceof HTMLElement) {
+    element.hidden = hidden;
   }
 }
 
@@ -1787,11 +1798,51 @@ function populateSelect(selectElement, items, selectedId) {
   }
 }
 
+function getSelectedExportTimingMode() {
+  const timingModeSelect = document.getElementById("exportTimingModeSelect");
+
+  return timingModeSelect instanceof HTMLSelectElement
+    ? timingModeSelect.value
+    : EXPORT_OPTIONS.defaults.timingMode;
+}
+
+function getExportTimingModeSummary(timingMode) {
+  if (timingMode === "fixed-speed") {
+    return "Keeps a constant route-travel pace from the selected multiplier and skips stationary time almost entirely.";
+  }
+
+  if (timingMode === "proportional") {
+    return "Uses the original activity timeline evenly with a single time-compression multiplier.";
+  }
+
+  return "Compresses idle sections more aggressively and slows down fast movement to keep it readable.";
+}
+
+function updateExportTimingControls() {
+  const timingMode = getSelectedExportTimingMode();
+
+  setElementHidden(
+    "exportAdaptiveStrengthGroup",
+    timingMode !== "adaptive-speed",
+  );
+  setTextContent(
+    "exportSpeedLabel",
+    timingMode === "adaptive-speed"
+      ? "Base speed multiplier"
+      : "Speed multiplier",
+  );
+  setTextContent("exportTimingModeSummary", getExportTimingModeSummary(timingMode));
+}
+
 function populateExportControls() {
   const resolutionSelect = document.getElementById("exportResolutionSelect");
   const cameraModeSelect = document.getElementById("exportCameraModeSelect");
+  const timingModeSelect = document.getElementById("exportTimingModeSelect");
   const fpsInput = document.getElementById("exportFpsInput");
   const speedInput = document.getElementById("exportSpeedInput");
+  const adaptiveStrengthInput = document.getElementById(
+    "exportAdaptiveStrengthInput",
+  );
 
   populateSelect(
     resolutionSelect,
@@ -1803,6 +1854,11 @@ function populateExportControls() {
     EXPORT_OPTIONS.cameraModes,
     EXPORT_OPTIONS.defaults.cameraMode,
   );
+  populateSelect(
+    timingModeSelect,
+    EXPORT_OPTIONS.timingModes,
+    EXPORT_OPTIONS.defaults.timingMode,
+  );
 
   if (fpsInput instanceof HTMLInputElement) {
     fpsInput.value = String(EXPORT_OPTIONS.defaults.fps);
@@ -1811,6 +1867,12 @@ function populateExportControls() {
   if (speedInput instanceof HTMLInputElement) {
     speedInput.value = String(EXPORT_OPTIONS.defaults.speedMultiplier);
   }
+
+  if (adaptiveStrengthInput instanceof HTMLInputElement) {
+    adaptiveStrengthInput.value = String(EXPORT_OPTIONS.defaults.adaptiveStrength);
+  }
+
+  updateExportTimingControls();
 }
 
 function updateMediaLibraryUi() {
@@ -2005,8 +2067,10 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("startExportButton", exportUiState.isExporting);
   setElementDisabled("cancelExportButton", !exportUiState.isExporting);
   setElementDisabled("exportResolutionSelect", exportUiState.isExporting);
+  setElementDisabled("exportTimingModeSelect", exportUiState.isExporting);
   setElementDisabled("exportFpsInput", exportUiState.isExporting);
   setElementDisabled("exportSpeedInput", exportUiState.isExporting);
+  setElementDisabled("exportAdaptiveStrengthInput", exportUiState.isExporting);
   setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
   setElementDisabled(
     "importMediaButton",
@@ -2016,8 +2080,12 @@ function updateExportUi(statusUpdate) {
 
 function readExportSettings() {
   const resolutionSelect = document.getElementById("exportResolutionSelect");
+  const timingModeSelect = document.getElementById("exportTimingModeSelect");
   const fpsInput = document.getElementById("exportFpsInput");
   const speedInput = document.getElementById("exportSpeedInput");
+  const adaptiveStrengthInput = document.getElementById(
+    "exportAdaptiveStrengthInput",
+  );
   const cameraModeSelect = document.getElementById("exportCameraModeSelect");
 
   return {
@@ -2025,6 +2093,10 @@ function readExportSettings() {
       resolutionSelect instanceof HTMLSelectElement
         ? resolutionSelect.value
         : EXPORT_OPTIONS.defaults.resolutionId,
+    timingMode:
+      timingModeSelect instanceof HTMLSelectElement
+        ? timingModeSelect.value
+        : EXPORT_OPTIONS.defaults.timingMode,
     fps:
       fpsInput instanceof HTMLInputElement
         ? Number(fpsInput.value)
@@ -2033,6 +2105,10 @@ function readExportSettings() {
       speedInput instanceof HTMLInputElement
         ? Number(speedInput.value)
         : EXPORT_OPTIONS.defaults.speedMultiplier,
+    adaptiveStrength:
+      adaptiveStrengthInput instanceof HTMLInputElement
+        ? Number(adaptiveStrengthInput.value)
+        : EXPORT_OPTIONS.defaults.adaptiveStrength,
     cameraMode:
       cameraModeSelect instanceof HTMLSelectElement
         ? cameraModeSelect.value
@@ -2043,6 +2119,11 @@ function readExportSettings() {
 function setupExportControls() {
   const startExportButton = document.getElementById("startExportButton");
   const cancelExportButton = document.getElementById("cancelExportButton");
+  const timingModeSelect = document.getElementById("exportTimingModeSelect");
+
+  timingModeSelect?.addEventListener("change", () => {
+    updateExportTimingControls();
+  });
 
   window.bikeFlyOverApp?.onExportStatus((statusUpdate) => {
     updateExportUi(statusUpdate);

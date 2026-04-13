@@ -12,7 +12,7 @@ These capabilities already exist in the current proof of concept and should be t
 - Interactive playback controls: play, pause, restart
 - Two camera modes: follow and overview
 - Export MP4 action inside the same POC window
-- Export settings for resolution, fps, speed multiplier, and camera mode
+- Export settings for resolution, fps, timing mode, speed multiplier, and camera mode
 - Export progress and cancellation feedback
 - Deterministic frame-by-frame export pipeline with PNG capture and MP4 assembly
 - Responsive two-column layout
@@ -87,7 +87,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-61 |v4  | Bug fix | Prevent timeline/playback state from jumping unexpectedly after export ends | Keeps editing workflow predictable | Partial |
 | F-62 |v3  | Platform | Define supported targets for desktop first, then mobile if still in scope | The current POC is desktop-focused while the spec mentions mobile | Not implemented |
 | F-63 | v3 | Platform | Add packaging/distribution for macOS, Windows, and Linux | Required for actual desktop delivery | Not implemented |
-| F-64 | v2 | Camera | Adapt speed: when track is idle, stay less (more time acceleration), specially if user paused | Makes better videos | Not Implemented |
+| F-64 | v2 | Camera | Adapt speed: when track is idle, stay less (more time acceleration), specially if user paused | Makes better videos | Implemented |
 | F-65 | v2 | Camera | Adapt camera movement: avoid too many moves ; when trace change direction, and specifically if it changes direction several time in a short time, get a higher point of view |  Makes better videos | Implemented |
 | F-66 | v2 | Camera | Add a small map view as incrustation in the video ; north should stay up and map should show the whole track|  Makes better videos | Not Implemented |
 

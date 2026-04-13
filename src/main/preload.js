@@ -5,6 +5,7 @@ const {
   EXPORT_CAMERA_MODES,
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
+  EXPORT_TIMING_MODES,
 } = require("../shared/export");
 
 function subscribe(channel, listener) {
@@ -26,6 +27,7 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
       defaults: EXPORT_DEFAULTS,
       resolutionPresets: EXPORT_RESOLUTION_PRESETS,
       cameraModes: EXPORT_CAMERA_MODES,
+      timingModes: EXPORT_TIMING_MODES,
     };
   },
   importMedia() {

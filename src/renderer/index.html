@@ -161,6 +161,10 @@
                 <select id="exportResolutionSelect"></select>
               </label>
               <label class="field-group">
+                <span class="field-label">Timing mode</span>
+                <select id="exportTimingModeSelect"></select>
+              </label>
+              <label class="field-group">
                 <span class="field-label">FPS</span>
                 <input
                   id="exportFpsInput"
@@ -170,8 +174,8 @@
                   value="30"
                 />
               </label>
-              <label class="field-group">
-                <span class="field-label">Speed multiplier</span>
+              <label id="exportSpeedGroup" class="field-group">
+                <span id="exportSpeedLabel" class="field-label">Base speed multiplier</span>
                 <input
                   id="exportSpeedInput"
                   type="number"
@@ -180,11 +184,25 @@
                   value="40"
                 />
               </label>
+              <label id="exportAdaptiveStrengthGroup" class="field-group">
+                <span class="field-label">Adaptive strength</span>
+                <input
+                  id="exportAdaptiveStrengthInput"
+                  type="number"
+                  min="0.25"
+                  max="3"
+                  step="0.05"
+                  value="1"
+                />
+              </label>
               <label class="field-group">
                 <span class="field-label">Camera mode</span>
                 <select id="exportCameraModeSelect"></select>
               </label>
             </div>
+            <p id="exportTimingModeSummary" class="helper-text">
+              Compresses idle sections more aggressively and slows down fast movement to keep it readable.
+            </p>
             <div class="button-row">
               <button id="startExportButton" type="button">Export MP4</button>
               <button id="cancelExportButton" type="button" disabled>Cancel</button>

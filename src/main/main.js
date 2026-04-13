@@ -12,6 +12,8 @@ const {
 } = require("../shared/media-metadata");
 const {
   EXPORT_DEFAULTS,
+  EXPORT_TIMING_MODES,
+  buildExportTimeline,
   computeExportFrameCount,
   formatFrameFileName,
   getExportActivityTimestamp,
@@ -23,6 +25,12 @@ const rendererPath = path.join(__dirname, "../renderer/index.html");
 
 let mainWindow = null;
 let activeExportSession = null;
+
+function getTimingModeLabel(timingMode) {
+  return (
+    EXPORT_TIMING_MODES.find((mode) => mode.id === timingMode)?.label || timingMode
+  );
+}
 
 if (isSmokeTest) {
   app.commandLine.appendSwitch("use-angle", "swiftshader");
@@ -297,13 +305,9 @@ async function renderExportFrame(session, frameIndex) {
     }
 
     const activityTimestamp = getExportActivityTimestamp({
-      startTimestamp: session.sampleTrack.trackpoints[0].timestamp,
-      endTimestamp:
-        session.sampleTrack.trackpoints[session.sampleTrack.trackpoints.length - 1]
-          .timestamp,
+      exportTimeline: session.exportTimeline,
       frameIndex,
       fps: session.settings.fps,
-      speedMultiplier: session.settings.speedMultiplier,
     });
 
     session.frameSettledDeferred = createDeferred();
@@ -350,7 +354,7 @@ async function runExportSession(session) {
   emitExportStatus({
     status: "starting",
     phase: "preparing",
-    message: `Preparing ${session.totalFrames} frames at ${session.settings.width}x${session.settings.height}.`,
+    message: `Preparing ${session.totalFrames} frames at ${session.settings.width}x${session.settings.height} using ${getTimingModeLabel(session.settings.timingMode)}.`,
     currentFrame: 0,
     totalFrames: session.totalFrames,
   });
@@ -432,11 +436,13 @@ async function startExport(settings) {
   }
 
   const trackpoints = sampleTrack.trackpoints;
+  const exportTimeline = buildExportTimeline({
+    trackpoints,
+    settings: normalizedSettings,
+  });
   const totalFrames = computeExportFrameCount({
-    startTimestamp: trackpoints[0].timestamp,
-    endTimestamp: trackpoints[trackpoints.length - 1].timestamp,
+    exportTimeline,
     fps: normalizedSettings.fps,
-    speedMultiplier: normalizedSettings.speedMultiplier,
   });
   const tempDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "bikeflyover-export-"),
@@ -445,6 +451,7 @@ async function startExport(settings) {
     cancelRequested: false,
     expectedFrameIndex: -1,
     exportPreparedDeferred: null,
+    exportTimeline,
     frameSettledDeferred: null,
     lastCompletedFrame: 0,
     originalWindowState: null,
