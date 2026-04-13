@@ -1028,13 +1028,14 @@ function getFollowCameraComplexity(
   inverseTransform,
 ) {
   const lookAheadLimit = Math.min(
-    playbackState.currentIndex + 8,
+    playbackState.currentIndex + 12,
     playbackState.routePositions.length - 1,
   );
   let previousHeading = null;
   let cumulativeHeadingDelta = 0;
   let largestHeadingDelta = 0;
   let turnReversalCount = 0;
+  let alternatingTurnCount = 0;
   let previousSignedDelta = 0;
 
   for (
@@ -1051,7 +1052,9 @@ function getFollowCameraComplexity(
     const localDirection = toLocalDirectionVector(
       Cesium,
       inverseTransform,
-      currentPosition,
+      trackpointIndex === playbackState.currentIndex + 1
+        ? currentPosition
+        : playbackState.routePositions[trackpointIndex - 1],
       candidatePosition,
     );
 
@@ -1069,11 +1072,15 @@ function getFollowCameraComplexity(
       largestHeadingDelta = Math.max(largestHeadingDelta, absoluteDelta);
 
       if (
-        Math.abs(previousSignedDelta) > Cesium.Math.toRadians(18) &&
-        Math.abs(signedDelta) > Cesium.Math.toRadians(18) &&
+        Math.abs(previousSignedDelta) > Cesium.Math.toRadians(10) &&
+        Math.abs(signedDelta) > Cesium.Math.toRadians(10) &&
         Math.sign(previousSignedDelta) !== Math.sign(signedDelta)
       ) {
         turnReversalCount += 1;
+      }
+
+      if (absoluteDelta > Cesium.Math.toRadians(14)) {
+        alternatingTurnCount += 1;
       }
 
       previousSignedDelta = signedDelta;
@@ -1083,9 +1090,10 @@ function getFollowCameraComplexity(
   }
 
   return Cesium.Math.clamp(
-    cumulativeHeadingDelta / Cesium.Math.toRadians(210) +
-      largestHeadingDelta / Cesium.Math.toRadians(110) * 0.35 +
-      turnReversalCount * 0.3,
+    cumulativeHeadingDelta / Cesium.Math.toRadians(165) +
+      largestHeadingDelta / Cesium.Math.toRadians(80) * 0.45 +
+      turnReversalCount * 0.42 +
+      alternatingTurnCount * 0.08,
     0,
     1,
   );
