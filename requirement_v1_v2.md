@@ -88,7 +88,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-62 |v3  | Platform | Define supported targets for desktop first, then mobile if still in scope | The current POC is desktop-focused while the spec mentions mobile | Not implemented |
 | F-63 | v3 | Platform | Add packaging/distribution for macOS, Windows, and Linux | Required for actual desktop delivery | Not implemented |
 | F-64 | v2 | Camera | Adapt speed: when track is idle, stay less (more time acceleration), specially if user paused | Makes better videos | Not Implemented |
-| F-65 | v2 | Camera | Adapt camera movement: avoid too many moves ; when trace change direction, and specifically if it changes direction several time in a short time, get a higher point of view |  Makes better videos | Not Implemented |
+| F-65 | v2 | Camera | Adapt camera movement: avoid too many moves ; when trace change direction, and specifically if it changes direction several time in a short time, get a higher point of view |  Makes better videos | Implemented |
 | F-66 | v2 | Camera | Add a small map view as incrustation in the video ; north should stay up and map should show the whole track|  Makes better videos | Not Implemented |
 
 ## Suggested grouping for release planning

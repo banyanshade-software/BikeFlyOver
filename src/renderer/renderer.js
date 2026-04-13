@@ -1017,6 +1017,80 @@ function toLocalDirectionVector(
   return localDirection;
 }
 
+function getLocalDirectionHeading(localDirection) {
+  return Math.atan2(localDirection.x, localDirection.y);
+}
+
+function getFollowCameraComplexity(
+  Cesium,
+  playbackState,
+  currentPosition,
+  inverseTransform,
+) {
+  const lookAheadLimit = Math.min(
+    playbackState.currentIndex + 8,
+    playbackState.routePositions.length - 1,
+  );
+  let previousHeading = null;
+  let cumulativeHeadingDelta = 0;
+  let largestHeadingDelta = 0;
+  let turnReversalCount = 0;
+  let previousSignedDelta = 0;
+
+  for (
+    let trackpointIndex = playbackState.currentIndex + 1;
+    trackpointIndex <= lookAheadLimit;
+    trackpointIndex += 1
+  ) {
+    const candidatePosition = playbackState.routePositions[trackpointIndex];
+
+    if (!candidatePosition) {
+      continue;
+    }
+
+    const localDirection = toLocalDirectionVector(
+      Cesium,
+      inverseTransform,
+      currentPosition,
+      candidatePosition,
+    );
+
+    if (!localDirection) {
+      continue;
+    }
+
+    const heading = getLocalDirectionHeading(localDirection);
+
+    if (previousHeading !== null) {
+      const signedDelta = Cesium.Math.negativePiToPi(heading - previousHeading);
+      const absoluteDelta = Math.abs(signedDelta);
+
+      cumulativeHeadingDelta += absoluteDelta;
+      largestHeadingDelta = Math.max(largestHeadingDelta, absoluteDelta);
+
+      if (
+        Math.abs(previousSignedDelta) > Cesium.Math.toRadians(18) &&
+        Math.abs(signedDelta) > Cesium.Math.toRadians(18) &&
+        Math.sign(previousSignedDelta) !== Math.sign(signedDelta)
+      ) {
+        turnReversalCount += 1;
+      }
+
+      previousSignedDelta = signedDelta;
+    }
+
+    previousHeading = heading;
+  }
+
+  return Cesium.Math.clamp(
+    cumulativeHeadingDelta / Cesium.Math.toRadians(210) +
+      largestHeadingDelta / Cesium.Math.toRadians(110) * 0.35 +
+      turnReversalCount * 0.3,
+    0,
+    1,
+  );
+}
+
 function getStableFollowHeading(
   Cesium,
   playbackState,
@@ -1087,7 +1161,7 @@ function getStableFollowHeading(
     return playbackState.camera.smoothedHeading;
   }
 
-  return Math.atan2(blendedDirection.x, blendedDirection.y);
+  return getLocalDirectionHeading(blendedDirection);
 }
 
 function updateSmoothedFollowCameraState(
@@ -1168,17 +1242,40 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     transform,
     new Cesium.Matrix4(),
   );
-  const desiredFocus = Cesium.Cartesian3.add(
-    currentPosition,
-    Cesium.Cartesian3.multiplyByScalar(up, 8, new Cesium.Cartesian3()),
-    new Cesium.Cartesian3(),
-  );
-  const desiredHeading = getStableFollowHeading(
+  const routeComplexity = getFollowCameraComplexity(
     Cesium,
     playbackState,
     currentPosition,
     inverseTransform,
   );
+  const desiredFocus = Cesium.Cartesian3.add(
+    currentPosition,
+    Cesium.Cartesian3.multiplyByScalar(
+      up,
+      Cesium.Math.lerp(8, 30, routeComplexity),
+      new Cesium.Cartesian3(),
+    ),
+    new Cesium.Cartesian3(),
+  );
+  let desiredHeading = getStableFollowHeading(
+    Cesium,
+    playbackState,
+    currentPosition,
+    inverseTransform,
+  );
+
+  if (
+    Number.isFinite(desiredHeading) &&
+    Number.isFinite(playbackState.camera.smoothedHeading)
+  ) {
+    const desiredHeadingDelta = Cesium.Math.negativePiToPi(
+      desiredHeading - playbackState.camera.smoothedHeading,
+    );
+    desiredHeading = Cesium.Math.negativePiToPi(
+      playbackState.camera.smoothedHeading +
+        desiredHeadingDelta * Cesium.Math.lerp(1, 0.38, routeComplexity),
+    );
+  }
 
   updateSmoothedFollowCameraState(
     Cesium,
@@ -1196,8 +1293,10 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
   }
 
   const heading = playbackState.camera.smoothedHeading;
-  const pitch = Cesium.Math.toRadians(-45);
-  const range = 190;
+  const pitch = Cesium.Math.toRadians(
+    Cesium.Math.lerp(-45, -62, routeComplexity),
+  );
+  const range = Cesium.Math.lerp(190, 310, routeComplexity);
   const localOffset = new Cesium.Cartesian3(
     -Math.sin(heading) * Math.cos(pitch) * range,
     -Math.cos(heading) * Math.cos(pitch) * range,
