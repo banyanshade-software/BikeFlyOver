@@ -196,7 +196,25 @@
             </p>
           </section>
         </aside>
-        <section id="cesiumContainer" class="viewer-panel" aria-label="Cesium viewer"></section>
+        <section class="viewer-panel" aria-label="Cesium viewer">
+          <div id="cesiumContainer" class="viewer-canvas"></div>
+          <aside id="mediaPreviewOverlay" class="media-preview-overlay" hidden aria-live="polite">
+            <article id="mediaPreviewCard" class="media-preview-card">
+              <p id="mediaPreviewType" class="media-preview-badge">Media</p>
+              <img
+                id="mediaPreviewImage"
+                class="media-preview-image"
+                alt=""
+                hidden
+              />
+              <div id="mediaPreviewFallback" class="media-preview-fallback" hidden>
+                <span id="mediaPreviewFallbackLabel">Preview unavailable</span>
+              </div>
+              <p id="mediaPreviewName" class="media-preview-name">-</p>
+              <p id="mediaPreviewTime" class="media-preview-meta">-</p>
+            </article>
+          </aside>
+        </section>
       </main>
     </div>
     <script src="./renderer.js"></script>

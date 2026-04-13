@@ -26,8 +26,12 @@ const mediaLibraryState = {
   isImporting: false,
   items: [],
   statusMessage: "No media imported yet.",
+  activePreviewItemId: null,
 };
 const TIMELINE_SLIDER_MAX = 1000;
+const MEDIA_PREVIEW_LEAD_IN_MS = 500;
+const MEDIA_PREVIEW_HOLD_MS = 1800;
+const MEDIA_PREVIEW_LEAD_OUT_MS = 700;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
 const TIMELINE_SCRUB_KEYS = new Set([
   "ArrowLeft",
@@ -264,6 +268,165 @@ function formatMediaAlignmentDetails(item) {
       : `trackpoint ${item.nearestTrackIndex + 1}`;
 
   return `${formatTimestamp(item.alignedActivityTime)} · ${trackpointLabel}`;
+}
+
+function getMediaPreviewUrl(filePath) {
+  return window.bikeFlyOverApp?.toFileUrl?.(filePath) || "";
+}
+
+function decorateMediaItemsForPreview(mediaItems) {
+  return mediaItems.map((item) => {
+    return {
+      ...item,
+      previewUrl: item.previewUrl || getMediaPreviewUrl(item.filePath),
+    };
+  });
+}
+
+function getActiveMediaPreviewPresentation(playbackTimestamp) {
+  let bestMatch = null;
+
+  for (const item of mediaLibraryState.items) {
+    if (
+      item.alignmentStatus !== "aligned" ||
+      !Number.isFinite(item.alignedActivityTimestamp)
+    ) {
+      continue;
+    }
+
+    const startTimestamp = item.alignedActivityTimestamp - MEDIA_PREVIEW_LEAD_IN_MS;
+    const endTimestamp =
+      item.alignedActivityTimestamp +
+      MEDIA_PREVIEW_HOLD_MS +
+      MEDIA_PREVIEW_LEAD_OUT_MS;
+
+    if (playbackTimestamp < startTimestamp || playbackTimestamp > endTimestamp) {
+      continue;
+    }
+
+    const offsetMs = Math.abs(item.alignedActivityTimestamp - playbackTimestamp);
+
+    if (!bestMatch || offsetMs < bestMatch.offsetMs) {
+      const relativeTimestamp = playbackTimestamp - startTimestamp;
+      let opacity = 1;
+      let translateY = 0;
+      let scale = 1;
+
+      if (relativeTimestamp < MEDIA_PREVIEW_LEAD_IN_MS) {
+        const enterProgress = relativeTimestamp / MEDIA_PREVIEW_LEAD_IN_MS;
+
+        opacity = enterProgress;
+        translateY = 18 * (1 - enterProgress);
+        scale = 0.94 + 0.06 * enterProgress;
+      } else if (
+        relativeTimestamp >
+        MEDIA_PREVIEW_LEAD_IN_MS + MEDIA_PREVIEW_HOLD_MS
+      ) {
+        const exitProgress =
+          (relativeTimestamp - MEDIA_PREVIEW_LEAD_IN_MS - MEDIA_PREVIEW_HOLD_MS) /
+          MEDIA_PREVIEW_LEAD_OUT_MS;
+
+        opacity = 1 - exitProgress;
+        translateY = -10 * exitProgress;
+        scale = 1 + 0.03 * exitProgress;
+      }
+
+      bestMatch = {
+        item,
+        offsetMs,
+        opacity,
+        translateY,
+        scale,
+      };
+    }
+  }
+
+  return bestMatch;
+}
+
+function hideMediaPreviewOverlay() {
+  const overlayElement = document.getElementById("mediaPreviewOverlay");
+
+  if (overlayElement instanceof HTMLElement) {
+    overlayElement.hidden = true;
+  }
+
+  mediaLibraryState.activePreviewItemId = null;
+}
+
+function updateMediaPreviewOverlay(playbackState) {
+  const overlayElement = document.getElementById("mediaPreviewOverlay");
+  const cardElement = document.getElementById("mediaPreviewCard");
+  const imageElement = document.getElementById("mediaPreviewImage");
+  const fallbackElement = document.getElementById("mediaPreviewFallback");
+  const fallbackLabelElement = document.getElementById("mediaPreviewFallbackLabel");
+
+  if (
+    !(overlayElement instanceof HTMLElement) ||
+    !(cardElement instanceof HTMLElement) ||
+    !(imageElement instanceof HTMLImageElement) ||
+    !(fallbackElement instanceof HTMLDivElement) ||
+    !(fallbackLabelElement instanceof HTMLElement)
+  ) {
+    return;
+  }
+
+  if (RENDER_MODE !== "preview") {
+    overlayElement.hidden = true;
+    return;
+  }
+
+  const presentation = getActiveMediaPreviewPresentation(
+    playbackState.currentTimestamp,
+  );
+
+  if (!presentation) {
+    overlayElement.hidden = true;
+    imageElement.removeAttribute("src");
+    mediaLibraryState.activePreviewItemId = null;
+    return;
+  }
+
+  const { item: activeItem, opacity, scale, translateY } = presentation;
+
+  cardElement.style.opacity = String(opacity);
+  cardElement.style.transform = `translateY(${translateY}px) scale(${scale})`;
+
+  if (mediaLibraryState.activePreviewItemId !== activeItem.id) {
+    mediaLibraryState.activePreviewItemId = activeItem.id;
+
+    setTextContent("mediaPreviewType", formatMediaType(activeItem.mediaType));
+    setTextContent("mediaPreviewName", activeItem.fileName);
+    setTextContent(
+      "mediaPreviewTime",
+      activeItem.alignedActivityTime
+        ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}`
+        : "Aligned media preview",
+    );
+
+    imageElement.alt = `${formatMediaType(activeItem.mediaType)} preview for ${activeItem.fileName}`;
+    imageElement.onerror = null;
+
+    if (activeItem.mediaType === "image" && activeItem.previewUrl) {
+      fallbackElement.hidden = true;
+      fallbackLabelElement.textContent = "Preview unavailable";
+      imageElement.hidden = false;
+      imageElement.onerror = () => {
+        imageElement.hidden = true;
+        fallbackElement.hidden = false;
+        fallbackLabelElement.textContent = "Image preview unavailable";
+      };
+      imageElement.src = activeItem.previewUrl;
+    } else {
+      imageElement.hidden = true;
+      imageElement.removeAttribute("src");
+      fallbackElement.hidden = false;
+      fallbackLabelElement.textContent =
+        activeItem.mediaType === "video" ? "Video clip preview" : "Preview unavailable";
+    }
+  }
+
+  overlayElement.hidden = false;
 }
 
 function renderSummary(sampleTrack) {
@@ -1086,6 +1249,10 @@ function syncPlaybackState(viewer, playbackState, options = {}) {
     updatePlaybackUI(playbackState);
     updateCameraUI(playbackState);
   }
+
+  if (options.updateMediaPreview !== false) {
+    updateMediaPreviewOverlay(playbackState);
+  }
 }
 
 function setPlaybackTimestamp(viewer, playbackState, timestamp, options = {}) {
@@ -1418,12 +1585,14 @@ function setupMediaLibraryControls(sampleTrack) {
       const result = await window.bikeFlyOverApp.importMedia();
 
       if (!result?.cancelled && Array.isArray(result?.mediaItems)) {
-        mediaLibraryState.items = alignMediaItemsToTrack(
-          mergeImportedMedia(
-            mediaLibraryState.items,
-            result.mediaItems,
+        mediaLibraryState.items = decorateMediaItemsForPreview(
+          alignMediaItemsToTrack(
+            mergeImportedMedia(
+              mediaLibraryState.items,
+              result.mediaItems,
+            ),
+            sampleTrack.trackpoints,
           ),
-          sampleTrack.trackpoints,
         );
         const alignedCount = mediaLibraryState.items.filter((item) => {
           return item.alignmentStatus === "aligned";
@@ -1450,6 +1619,9 @@ function setupMediaLibraryControls(sampleTrack) {
     } finally {
       mediaLibraryState.isImporting = false;
       updateMediaLibraryUi();
+      if (window.playbackState) {
+        updateMediaPreviewOverlay(window.playbackState);
+      }
     }
   });
 }
@@ -1721,6 +1893,7 @@ function setupExportRenderBridge(viewer, playbackState) {
     document.body.classList.remove("export-session-active");
     viewer.resize();
     restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
+    updateMediaPreviewOverlay(playbackState);
     exportBridgeState.previewSnapshot = null;
   });
 
@@ -1781,6 +1954,7 @@ async function initializeApp() {
       updateCameraUI(playbackState);
       populateExportControls();
       updateMediaLibraryUi();
+      updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
       setupMediaLibraryControls(sampleTrack);
       setupPlaybackControls(viewer, playbackState);

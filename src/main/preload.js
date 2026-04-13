@@ -1,3 +1,4 @@
+const { pathToFileURL } = require("node:url");
 const { contextBridge, ipcRenderer } = require("electron");
 const { loadSampleTrack } = require("../shared/sample-track");
 const {
@@ -29,6 +30,9 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
   },
   importMedia() {
     return ipcRenderer.invoke("media-import");
+  },
+  toFileUrl(filePath) {
+    return pathToFileURL(filePath).href;
   },
   startExport(settings) {
     return ipcRenderer.invoke("export-start", settings);
