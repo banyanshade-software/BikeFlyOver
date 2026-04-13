@@ -78,7 +78,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-54 |v2  | Reliability | Add automated tests for import parsing, playback synchronization, export frame math, and project persistence | Required by the quality goals in the spec | Partial |
 | F-55 |v1  | Bug fix | Prevent the track line from visually floating too high above the ground or terrain | Fixes an obvious visual defect in route rendering | Implemented |
 | F-56 |v1  | Bug fix | Ensure route markers and played-route highlight stay aligned with the same altitude/terrain strategy as the base track | Avoids mismatched route geometry during playback | Implemented |
-| F-57 |v1  | Bug fix | Fix follow-camera drift, jitter, or overshoot on tight turns and steep elevation changes | Improves preview and export quality | Partial |
+| F-57 |v1  | Bug fix | Fix follow-camera drift, jitter, or overshoot on tight turns and steep elevation changes | Improves preview and export quality | Implemented |
 | F-58 |v4  | Bug fix | Ensure export layout fully restores the normal POC layout after success, failure, or cancellation | Prevents UI state regressions after export | Partial |
 | F-59 |v4  | Bug fix | Ensure export captures only the Cesium viewport and never includes hidden UI chrome or resize artifacts | Prevents bad MP4 output frames | Partial |
 | F-60 |v2  | Bug fix | Handle window resize edge cases so low-resolution exports do not break the preview layout or controls | Important now that multiple export resolutions exist | Partial |

@@ -571,6 +571,208 @@ function getLookAheadTrackpoint(playbackState, lookAheadPointCount = 12) {
   ];
 }
 
+function getFollowCameraLookAheadTargets(Cesium, playbackState, currentPosition) {
+  const targets = {
+    nearPosition: null,
+    farPosition: null,
+  };
+
+  for (
+    let trackpointIndex = playbackState.currentIndex + 1;
+    trackpointIndex < playbackState.trackpoints.length;
+    trackpointIndex += 1
+  ) {
+    const candidatePosition = toRouteDisplayPosition(
+      Cesium,
+      playbackState.trackpoints[trackpointIndex],
+    );
+    const candidateDistance = Cesium.Cartesian3.distance(
+      currentPosition,
+      candidatePosition,
+    );
+
+    if (!targets.nearPosition && candidateDistance >= 18) {
+      targets.nearPosition = candidatePosition;
+    }
+
+    if (candidateDistance >= 42) {
+      targets.farPosition = candidatePosition;
+      break;
+    }
+  }
+
+  const fallbackPosition = toRouteDisplayPosition(
+    Cesium,
+    getLookAheadTrackpoint(playbackState),
+  );
+
+  return {
+    nearPosition: targets.nearPosition || fallbackPosition,
+    farPosition: targets.farPosition || targets.nearPosition || fallbackPosition,
+  };
+}
+
+function toLocalDirectionVector(
+  Cesium,
+  inverseTransform,
+  fromPosition,
+  targetPosition,
+) {
+  const worldDirection = Cesium.Cartesian3.subtract(
+    targetPosition,
+    fromPosition,
+    new Cesium.Cartesian3(),
+  );
+
+  if (Cesium.Cartesian3.magnitudeSquared(worldDirection) < 9) {
+    return null;
+  }
+
+  const localDirection = Cesium.Matrix4.multiplyByPointAsVector(
+    inverseTransform,
+    worldDirection,
+    new Cesium.Cartesian3(),
+  );
+
+  if (
+    !Number.isFinite(localDirection.x) ||
+    !Number.isFinite(localDirection.y) ||
+    localDirection.x * localDirection.x + localDirection.y * localDirection.y < 1
+  ) {
+    return null;
+  }
+
+  return localDirection;
+}
+
+function getStableFollowHeading(
+  Cesium,
+  playbackState,
+  currentPosition,
+  inverseTransform,
+) {
+  const { nearPosition, farPosition } = getFollowCameraLookAheadTargets(
+    Cesium,
+    playbackState,
+    currentPosition,
+  );
+  const nearDirection = toLocalDirectionVector(
+    Cesium,
+    inverseTransform,
+    currentPosition,
+    nearPosition,
+  );
+  const farDirection = toLocalDirectionVector(
+    Cesium,
+    inverseTransform,
+    currentPosition,
+    farPosition,
+  );
+
+  if (!nearDirection && !farDirection) {
+    return playbackState.camera.smoothedHeading;
+  }
+
+  const blendedDirection = new Cesium.Cartesian3(0, 0, 0);
+
+  if (nearDirection) {
+    const normalizedNearDirection = Cesium.Cartesian3.normalize(
+      nearDirection,
+      new Cesium.Cartesian3(),
+    );
+    Cesium.Cartesian3.add(
+      blendedDirection,
+      Cesium.Cartesian3.multiplyByScalar(
+        normalizedNearDirection,
+        0.7,
+        new Cesium.Cartesian3(),
+      ),
+      blendedDirection,
+    );
+  }
+
+  if (farDirection) {
+    const normalizedFarDirection = Cesium.Cartesian3.normalize(
+      farDirection,
+      new Cesium.Cartesian3(),
+    );
+    Cesium.Cartesian3.add(
+      blendedDirection,
+      Cesium.Cartesian3.multiplyByScalar(
+        normalizedFarDirection,
+        0.3,
+        new Cesium.Cartesian3(),
+      ),
+      blendedDirection,
+    );
+  }
+
+  if (
+    !Number.isFinite(blendedDirection.x) ||
+    !Number.isFinite(blendedDirection.y) ||
+    Cesium.Cartesian3.magnitudeSquared(blendedDirection) === 0
+  ) {
+    return playbackState.camera.smoothedHeading;
+  }
+
+  return Math.atan2(blendedDirection.x, blendedDirection.y);
+}
+
+function updateSmoothedFollowCameraState(
+  Cesium,
+  playbackState,
+  desiredFocus,
+  desiredHeading,
+  useSmoothing,
+) {
+  if (!useSmoothing || !playbackState.camera.smoothedFocus) {
+    playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
+    playbackState.camera.smoothedHeading = desiredHeading;
+    return;
+  }
+
+  const safeDesiredHeading = Number.isFinite(desiredHeading)
+    ? desiredHeading
+    : playbackState.camera.smoothedHeading;
+
+  if (!Number.isFinite(safeDesiredHeading)) {
+    return;
+  }
+
+  const headingDelta = Cesium.Math.negativePiToPi(
+    safeDesiredHeading - playbackState.camera.smoothedHeading,
+  );
+  const absoluteHeadingDelta = Math.abs(headingDelta);
+
+  if (absoluteHeadingDelta > Cesium.Math.toRadians(120)) {
+    playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
+    playbackState.camera.smoothedHeading = safeDesiredHeading;
+    return;
+  }
+
+  const turnSharpness = Cesium.Math.clamp(
+    absoluteHeadingDelta / Cesium.Math.toRadians(60),
+    0,
+    1,
+  );
+
+  Cesium.Cartesian3.lerp(
+    playbackState.camera.smoothedFocus,
+    desiredFocus,
+    Cesium.Math.lerp(0.16, 0.28, turnSharpness),
+    playbackState.camera.smoothedFocus,
+  );
+
+  if (absoluteHeadingDelta < Cesium.Math.toRadians(1.25)) {
+    return;
+  }
+
+  playbackState.camera.smoothedHeading = Cesium.Math.negativePiToPi(
+    playbackState.camera.smoothedHeading +
+      headingDelta * Cesium.Math.lerp(0.12, 0.34, turnSharpness),
+  );
+}
+
 function updateFollowCamera(viewer, playbackState, options = {}) {
   const Cesium = window.Cesium;
   const useSmoothing = options.useSmoothing ?? true;
@@ -583,65 +785,41 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     Cesium,
     playbackState.currentSample,
   );
-  const lookAheadTrackpoint = getLookAheadTrackpoint(playbackState);
-  const lookAheadPosition = toRouteDisplayPosition(Cesium, lookAheadTrackpoint);
   const ellipsoid = viewer.scene.globe.ellipsoid;
   const up = ellipsoid.geodeticSurfaceNormal(
     currentPosition,
     new Cesium.Cartesian3(),
   );
-  const rawForward = Cesium.Cartesian3.subtract(
-    lookAheadPosition,
-    currentPosition,
-    new Cesium.Cartesian3(),
-  );
-
-  if (Cesium.Cartesian3.magnitudeSquared(rawForward) === 0) {
-    return;
-  }
-
   const transform = Cesium.Transforms.eastNorthUpToFixedFrame(currentPosition);
   const inverseTransform = Cesium.Matrix4.inverseTransformation(
     transform,
     new Cesium.Matrix4(),
   );
-  const localForward = Cesium.Matrix4.multiplyByPointAsVector(
-    inverseTransform,
-    rawForward,
-    new Cesium.Cartesian3(),
-  );
-
-  if (
-    !Number.isFinite(localForward.x) ||
-    !Number.isFinite(localForward.y) ||
-    (localForward.x === 0 && localForward.y === 0)
-  ) {
-    return;
-  }
-
-  const desiredHeading = Math.atan2(localForward.x, localForward.y);
   const desiredFocus = Cesium.Cartesian3.add(
     currentPosition,
     Cesium.Cartesian3.multiplyByScalar(up, 8, new Cesium.Cartesian3()),
     new Cesium.Cartesian3(),
   );
+  const desiredHeading = getStableFollowHeading(
+    Cesium,
+    playbackState,
+    currentPosition,
+    inverseTransform,
+  );
 
-  if (!useSmoothing || !playbackState.camera.smoothedFocus) {
-    playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
-    playbackState.camera.smoothedHeading = desiredHeading;
-  } else {
-    Cesium.Cartesian3.lerp(
-      playbackState.camera.smoothedFocus,
-      desiredFocus,
-      0.18,
-      playbackState.camera.smoothedFocus,
-    );
-    const headingDelta = Cesium.Math.negativePiToPi(
-      desiredHeading - playbackState.camera.smoothedHeading,
-    );
-    playbackState.camera.smoothedHeading = Cesium.Math.negativePiToPi(
-      playbackState.camera.smoothedHeading + headingDelta * 0.14,
-    );
+  updateSmoothedFollowCameraState(
+    Cesium,
+    playbackState,
+    desiredFocus,
+    desiredHeading,
+    useSmoothing,
+  );
+
+  if (
+    !playbackState.camera.smoothedFocus ||
+    !Number.isFinite(playbackState.camera.smoothedHeading)
+  ) {
+    return;
   }
 
   const heading = playbackState.camera.smoothedHeading;
