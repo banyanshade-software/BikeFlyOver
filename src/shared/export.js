@@ -18,6 +18,12 @@ const EXPORT_RESOLUTION_PRESETS = [
     height: 400,
   },
   {
+    id: "square-220",
+    label: "220 x 220 (Square / Test)",
+    width: 220,
+    height: 220,
+  },
+  {
     id: "square-1080",
     label: "1080 x 1080 (Square)",
     width: 1080,
