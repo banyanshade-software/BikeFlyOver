@@ -127,6 +127,18 @@
             <div class="button-row">
               <button id="importMediaButton" type="button">Import media</button>
             </div>
+            <div class="progress-block">
+              <div class="progress-header">
+                <span id="mediaImportProgressLabel" class="progress-label">Idle</span>
+                <span id="mediaImportProgressValue" class="progress-value">0%</span>
+              </div>
+              <progress
+                id="mediaImportProgressBar"
+                class="progress-bar"
+                max="100"
+                value="0"
+              ></progress>
+            </div>
             <dl class="summary-list summary-list--compact">
               <div>
                 <dt>Items</dt>
@@ -176,6 +188,18 @@
             <div class="button-row">
               <button id="startExportButton" type="button">Export MP4</button>
               <button id="cancelExportButton" type="button" disabled>Cancel</button>
+            </div>
+            <div class="progress-block">
+              <div class="progress-header">
+                <span id="exportProgressLabel" class="progress-label">Idle</span>
+                <span id="exportProgressValue" class="progress-value">0%</span>
+              </div>
+              <progress
+                id="exportProgressBar"
+                class="progress-bar"
+                max="100"
+                value="0"
+              ></progress>
             </div>
             <dl class="summary-list summary-list--compact">
               <div>

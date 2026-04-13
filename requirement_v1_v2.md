@@ -67,8 +67,8 @@ These capabilities already exist in the current proof of concept and should be t
 | F-41 |v3  | GUI enhancement | Improve responsive layout for narrow widths and portrait screens | Required by the spec | Partial |
 | F-42 |v4  | GUI enhancement | Add keyboard shortcuts for playback, scrubbing, and export | Improves desktop ergonomics | Not implemented |
 | F-43 |v3  | GUI enhancement | Add validation messages for invalid export settings and import errors | Improves robustness and clarity | Partial |
-| F-44 |v1  | GUI enhancement | Add progress bars instead of text-only status for long-running exports/imports | Better feedback for long operations | Not implemented |
-| F-45 |v1  | Performance enhancement | Cache route-derived geometry and Cartesian positions to avoid repeated recomputation during playback/export | Improves viewer and export performance | Partial |
+| F-44 |v1  | GUI enhancement | Add progress bars instead of text-only status for long-running exports/imports | Better feedback for long operations | Implemented |
+| F-45 |v1  | Performance enhancement | Cache route-derived geometry and Cartesian positions to avoid repeated recomputation during playback/export | Improves viewer and export performance | Implemented |
 | F-46 |v2  | Performance enhancement | Reduce unnecessary Cesium renders during interactive idle state | Improves CPU/GPU usage | Partial |
 | F-47 |v2  | Performance enhancement | Profile and optimize export memory usage for large frame sequences | Important for long videos and high resolutions | Not implemented |
 | F-48 |v4| Performance enhancement | Add temp-disk budgeting and warnings before large exports | Prevents failures for long or high-resolution renders | Not implemented |

@@ -28,6 +28,12 @@ const mediaLibraryState = {
   statusMessage: "No media imported yet.",
   activePreviewItemId: null,
   previewEntities: [],
+  progress: {
+    indeterminate: false,
+    label: "Idle",
+    status: "idle",
+    value: 0,
+  },
 };
 const TIMELINE_SLIDER_MAX = 1000;
 const MEDIA_PREVIEW_LEAD_IN_MS = 500;
@@ -95,6 +101,43 @@ function setElementDisabled(elementId, disabled) {
 
   if (element instanceof HTMLSelectElement) {
     element.disabled = disabled;
+  }
+}
+
+function setProgressState(elementIds, state) {
+  const progressElement = document.getElementById(elementIds.bar);
+  const label = state.label || "Idle";
+  const value = Math.max(0, Math.min(100, Math.round(state.value || 0)));
+  const status = state.status || "idle";
+  const indeterminate = Boolean(state.indeterminate);
+
+  setTextContent(elementIds.label, label);
+  setTextContent(elementIds.value, indeterminate ? "Working..." : `${value}%`);
+
+  if (!(progressElement instanceof HTMLProgressElement)) {
+    return;
+  }
+
+  progressElement.classList.remove(
+    "progress-bar--idle",
+    "progress-bar--complete",
+    "progress-bar--error",
+    "progress-bar--indeterminate",
+  );
+
+  if (indeterminate) {
+    progressElement.removeAttribute("value");
+    progressElement.classList.add("progress-bar--indeterminate");
+  } else {
+    progressElement.value = value;
+  }
+
+  if (status === "complete") {
+    progressElement.classList.add("progress-bar--complete");
+  } else if (status === "error" || status === "cancelled") {
+    progressElement.classList.add("progress-bar--error");
+  } else if (status === "idle") {
+    progressElement.classList.add("progress-bar--idle");
   }
 }
 
@@ -200,6 +243,65 @@ function formatFrameProgress(currentFrame, totalFrames) {
   }
 
   return `${currentFrame} / ${totalFrames}`;
+}
+
+function getExportProgressState(statusUpdate) {
+  const currentFrame = statusUpdate.currentFrame || 0;
+  const totalFrames = statusUpdate.totalFrames || 0;
+  const status = statusUpdate.status || "idle";
+  const phase = statusUpdate.phase || "idle";
+
+  if (status === "encoding") {
+    return {
+      indeterminate: true,
+      label: "Encoding video",
+      status: "running",
+      value: 100,
+    };
+  }
+
+  if (status === "complete") {
+    return {
+      indeterminate: false,
+      label: "Export complete",
+      status: "complete",
+      value: 100,
+    };
+  }
+
+  if (status === "failed") {
+    return {
+      indeterminate: false,
+      label: "Export failed",
+      status: "error",
+      value: totalFrames > 0 ? (currentFrame / totalFrames) * 100 : 100,
+    };
+  }
+
+  if (status === "cancelled") {
+    return {
+      indeterminate: false,
+      label: "Export cancelled",
+      status: "cancelled",
+      value: totalFrames > 0 ? (currentFrame / totalFrames) * 100 : 0,
+    };
+  }
+
+  if (["starting", "running"].includes(status)) {
+    return {
+      indeterminate: false,
+      label: phase === "preparing" ? "Preparing frames" : "Rendering frames",
+      status: "running",
+      value: totalFrames > 0 ? (currentFrame / totalFrames) * 100 : 0,
+    };
+  }
+
+  return {
+    indeterminate: false,
+    label: "Idle",
+    status: "idle",
+    value: 0,
+  };
 }
 
 function formatMediaType(mediaType) {
@@ -330,7 +432,7 @@ function clearMediaPreviewEntities(viewer) {
   mediaLibraryState.previewEntities = [];
 }
 
-function syncMediaPreviewEntities(viewer, trackpoints) {
+function syncMediaPreviewEntities(viewer, playbackState) {
   const Cesium = window.Cesium;
 
   clearMediaPreviewEntities(viewer);
@@ -344,15 +446,15 @@ function syncMediaPreviewEntities(viewer, trackpoints) {
       return item.alignmentStatus === "aligned" && Number.isFinite(item.nearestTrackIndex);
     })
     .map((item) => {
-      const trackpoint = trackpoints[item.nearestTrackIndex];
+      const position = playbackState.routePositions[item.nearestTrackIndex];
 
-      if (!trackpoint) {
+      if (!position) {
         return null;
       }
 
       return viewer.entities.add({
         id: `media-preview-${item.id}`,
-        position: toRouteDisplayPosition(Cesium, trackpoint),
+        position,
         billboard: {
           image: createMediaPreviewMarkerImage(item),
           width: 88,
@@ -582,6 +684,8 @@ function createPlaybackState(trackpoints, options = {}) {
     animationFrameId: null,
     markerEntity: null,
     progressEntity: null,
+    currentSamplePosition: null,
+    playedRoutePositionsScratch: [],
     routePositions: [],
     camera: {
       mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
@@ -744,8 +848,8 @@ function addRouteEntities(viewer, sampleTrack) {
   const { trackpoints } = sampleTrack;
   const routePositions = buildRoutePositions(Cesium, trackpoints);
   const routeBoundingSphere = Cesium.BoundingSphere.fromPoints(routePositions);
-  const startTrackpoint = trackpoints[0];
-  const endTrackpoint = trackpoints[trackpoints.length - 1];
+  const startPosition = routePositions[0];
+  const endPosition = routePositions[routePositions.length - 1];
 
   const routeEntity = viewer.entities.add({
     id: "sample-route",
@@ -761,7 +865,7 @@ function addRouteEntities(viewer, sampleTrack) {
   viewer.entities.add({
     id: "route-start",
     name: "Route start",
-    position: toRouteDisplayPosition(Cesium, startTrackpoint),
+    position: startPosition,
     point: {
       pixelSize: 13,
       color: Cesium.Color.fromCssColorString("#6dff8a"),
@@ -774,7 +878,7 @@ function addRouteEntities(viewer, sampleTrack) {
   viewer.entities.add({
     id: "route-end",
     name: "Route end",
-    position: toRouteDisplayPosition(Cesium, endTrackpoint),
+    position: endPosition,
     point: {
       pixelSize: 13,
       color: Cesium.Color.fromCssColorString("#ff8a5b"),
@@ -831,13 +935,11 @@ function setOverviewCamera(viewer, playbackState) {
   viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
 }
 
-function getLookAheadTrackpoint(playbackState, lookAheadPointCount = 12) {
-  return playbackState.trackpoints[
-    Math.min(
-      playbackState.currentIndex + lookAheadPointCount,
-      playbackState.trackpoints.length - 1,
-    )
-  ];
+function getLookAheadTrackIndex(playbackState, lookAheadPointCount = 12) {
+  return Math.min(
+    playbackState.currentIndex + lookAheadPointCount,
+    playbackState.trackpoints.length - 1,
+  );
 }
 
 function getFollowCameraLookAheadTargets(Cesium, playbackState, currentPosition) {
@@ -851,10 +953,12 @@ function getFollowCameraLookAheadTargets(Cesium, playbackState, currentPosition)
     trackpointIndex < playbackState.trackpoints.length;
     trackpointIndex += 1
   ) {
-    const candidatePosition = toRouteDisplayPosition(
-      Cesium,
-      playbackState.trackpoints[trackpointIndex],
-    );
+    const candidatePosition = playbackState.routePositions[trackpointIndex];
+
+    if (!candidatePosition) {
+      continue;
+    }
+
     const candidateDistance = Cesium.Cartesian3.distance(
       currentPosition,
       candidatePosition,
@@ -870,10 +974,9 @@ function getFollowCameraLookAheadTargets(Cesium, playbackState, currentPosition)
     }
   }
 
-  const fallbackPosition = toRouteDisplayPosition(
-    Cesium,
-    getLookAheadTrackpoint(playbackState),
-  );
+  const fallbackPosition =
+    playbackState.routePositions[getLookAheadTrackIndex(playbackState)] ||
+    currentPosition;
 
   return {
     nearPosition: targets.nearPosition || fallbackPosition,
@@ -1050,10 +1153,11 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     return;
   }
 
-  const currentPosition = toRouteDisplayPosition(
-    Cesium,
-    playbackState.currentSample,
-  );
+  const currentPosition = playbackState.currentSamplePosition;
+
+  if (!currentPosition) {
+    return;
+  }
   const ellipsoid = viewer.scene.globe.ellipsoid;
   const up = ellipsoid.geodeticSurfaceNormal(
     currentPosition,
@@ -1184,6 +1288,7 @@ function advancePlaybackIndex(playbackState) {
 }
 
 function interpolateTrackpoint(playbackState) {
+  const Cesium = window.Cesium;
   const { currentIndex, currentTimestamp, trackpoints } = playbackState;
   const startTrackpoint = trackpoints[currentIndex];
   const endTrackpoint =
@@ -1194,6 +1299,9 @@ function interpolateTrackpoint(playbackState) {
       ...startTrackpoint,
       timestamp: currentTimestamp,
     };
+    playbackState.currentSamplePosition =
+      playbackState.routePositions[currentIndex] ||
+      toRouteDisplayPosition(Cesium, startTrackpoint);
     return;
   }
 
@@ -1229,18 +1337,27 @@ function interpolateTrackpoint(playbackState) {
         : startTrackpoint.speed +
           (endTrackpoint.speed - startTrackpoint.speed) * segmentRatio,
   };
+  playbackState.currentSamplePosition = Cesium.Cartesian3.fromDegrees(
+    playbackState.currentSample.longitude,
+    playbackState.currentSample.latitude,
+    ROUTE_DISPLAY_HEIGHT_METERS,
+  );
 }
 
 function buildPlayedRoutePositions(Cesium, playbackState) {
-  const playedPositions = playbackState.routePositions.slice(
-    0,
-    playbackState.currentIndex + 1,
-  );
+  const playedPositions = playbackState.playedRoutePositionsScratch;
+  playedPositions.length = 0;
 
-  if (playbackState.currentSample) {
-    playedPositions.push(
-      toRouteDisplayPosition(Cesium, playbackState.currentSample),
-    );
+  for (let index = 0; index <= playbackState.currentIndex; index += 1) {
+    playedPositions.push(playbackState.routePositions[index]);
+  }
+
+  if (
+    playbackState.currentSamplePosition &&
+    playbackState.currentSamplePosition !==
+      playbackState.routePositions[playbackState.currentIndex]
+  ) {
+    playedPositions.push(playbackState.currentSamplePosition);
   }
 
   return playedPositions;
@@ -1252,7 +1369,7 @@ function addPlaybackEntities(viewer, playbackState) {
   const markerEntity = viewer.entities.add({
     id: "current-position-marker",
     name: "Current position",
-    position: toRouteDisplayPosition(Cesium, playbackState.currentSample),
+    position: playbackState.currentSamplePosition,
     point: {
       pixelSize: 16,
       color: Cesium.Color.fromCssColorString("#ffe56a"),
@@ -1283,13 +1400,8 @@ function addPlaybackEntities(viewer, playbackState) {
 }
 
 function updateMarkerPosition(playbackState) {
-  const Cesium = window.Cesium;
-
-  if (playbackState.markerEntity) {
-    playbackState.markerEntity.position = toRouteDisplayPosition(
-      Cesium,
-      playbackState.currentSample,
-    );
+  if (playbackState.markerEntity && playbackState.currentSamplePosition) {
+    playbackState.markerEntity.position = playbackState.currentSamplePosition;
   }
 }
 
@@ -1613,6 +1725,14 @@ function updateMediaLibraryUi() {
     "importMediaButton",
     mediaLibraryState.isImporting || exportUiState.isExporting,
   );
+  setProgressState(
+    {
+      bar: "mediaImportProgressBar",
+      label: "mediaImportProgressLabel",
+      value: "mediaImportProgressValue",
+    },
+    mediaLibraryState.progress,
+  );
 
   if (!(mediaLibraryList instanceof HTMLUListElement)) {
     return;
@@ -1673,12 +1793,25 @@ function setupMediaLibraryControls(viewer, sampleTrack) {
 
   importMediaButton?.addEventListener("click", async () => {
     mediaLibraryState.isImporting = true;
+    mediaLibraryState.progress = {
+      indeterminate: true,
+      label: "Selecting media files",
+      status: "running",
+      value: 10,
+    };
     updateMediaLibraryUi();
 
     try {
       const result = await window.bikeFlyOverApp.importMedia();
 
       if (!result?.cancelled && Array.isArray(result?.mediaItems)) {
+        mediaLibraryState.progress = {
+          indeterminate: true,
+          label: "Reading metadata and aligning media",
+          status: "running",
+          value: 70,
+        };
+        updateMediaLibraryUi();
         mediaLibraryState.items = decorateMediaItemsForPreview(
           alignMediaItemsToTrack(
             mergeImportedMedia(
@@ -1701,16 +1834,34 @@ function setupMediaLibraryControls(viewer, sampleTrack) {
           result.mediaItems.length > 0
             ? `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range.`
             : "No supported media files were added.";
-        syncMediaPreviewEntities(viewer, sampleTrack.trackpoints);
+        mediaLibraryState.progress = {
+          indeterminate: false,
+          label: result.mediaItems.length > 0 ? "Import complete" : "No supported files",
+          status: result.mediaItems.length > 0 ? "complete" : "idle",
+          value: result.mediaItems.length > 0 ? 100 : 0,
+        };
+        syncMediaPreviewEntities(viewer, playbackState);
       } else if (result?.cancelled) {
         mediaLibraryState.statusMessage =
           mediaLibraryState.items.length > 0
             ? "Import cancelled."
             : "No media imported yet.";
+        mediaLibraryState.progress = {
+          indeterminate: false,
+          label: "Import cancelled",
+          status: "cancelled",
+          value: 0,
+        };
       }
     } catch (error) {
       mediaLibraryState.statusMessage =
         error instanceof Error ? error.message : String(error);
+      mediaLibraryState.progress = {
+        indeterminate: false,
+        label: "Import failed",
+        status: "error",
+        value: 100,
+      };
     } finally {
       mediaLibraryState.isImporting = false;
       updateMediaLibraryUi();
@@ -1732,6 +1883,14 @@ function updateExportUi(statusUpdate) {
     totalFrames ? formatFrameProgress(currentFrame, totalFrames) : "-",
   );
   setTextContent("exportMessage", statusUpdate.message || "Idle.");
+  setProgressState(
+    {
+      bar: "exportProgressBar",
+      label: "exportProgressLabel",
+      value: "exportProgressValue",
+    },
+    getExportProgressState(statusUpdate),
+  );
 
   exportUiState.isExporting = ["starting", "running", "encoding"].includes(
     statusUpdate.status,
@@ -2030,6 +2189,7 @@ async function initializeApp() {
     );
 
     playbackState.routePositions = routePositions;
+    playbackState.currentSamplePosition = routePositions[0] || null;
     playbackState.camera.routeBoundingSphere = routeBoundingSphere;
     playbackState.camera.routeEntity = routeEntity;
 
@@ -2050,6 +2210,13 @@ async function initializeApp() {
       updatePlaybackUI(playbackState);
       updateCameraUI(playbackState);
       populateExportControls();
+      updateExportUi({
+        status: "idle",
+        phase: "-",
+        message: "Idle.",
+        currentFrame: 0,
+        totalFrames: 0,
+      });
       updateMediaLibraryUi();
       updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
