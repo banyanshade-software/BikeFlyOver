@@ -16,6 +16,9 @@ Make the camera behave more intelligently when the route changes direction sever
    - repeated zig-zag movement
    - steep/complex areas
 2. Adjust camera behavior accordingly:
+   - translate left/right instead of following route (when route turns right then left) if appropriate
+   - supress camera movement if route is still in frame, when route turns around for instance in a 
+     round about, route doing a loop, etc
    - move higher for complex turns
    - reduce excessive camera motion
    - smooth transitions between strategies
