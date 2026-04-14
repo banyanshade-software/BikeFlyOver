@@ -46,8 +46,8 @@ These capabilities already exist in the current proof of concept and should be t
 | F-22 |v3  | Media | Preview inserted media in the timeline and viewer | Needed to validate placement before export | Not implemented |
 | F-67 |v1  | Media | Show aligned media as permanent thumbnail/card markers placed on the track in the preview window | Gives immediate visual feedback that media placement is working before export | Implemented |
 | F-68 |v1  | Media | Insert aligned media into the generated video with a simple animation | Turns imported photos/videos into visible output instead of metadata-only timeline items | Implemented |
-| F-23 |v2  | Overlay | Display metrics from the activity file (speed, time, distance, heart rate when available) | Required by the spec | Not implemented |
-| F-24 |v2  | Overlay | Support text and graphical overlays (for example speedometer, stat chips, elevation, BPM) | Required by the spec | Not implemented |
+| F-23 |v2  | Overlay | Display metrics from the activity file (speed, time, distance, heart rate when available) | Required by the spec | Implemented |
+| F-24 |v2  | Overlay | Support text and graphical overlays (for example speedometer, stat chips, elevation, BPM) | Required by the spec | Implemented |
 | F-25 |v2  | Overlay | Let users enable/disable each overlay independently | Needed for export customization | Not implemented |
 | F-26 |v2  | Overlay | Add overlay positioning and style presets | Needed to avoid one fixed layout | Not implemented |
 | F-27 |v3  | Export | Expand export settings beyond current basics: output bitrate/quality profile | Improves control over file size and quality | Partial |

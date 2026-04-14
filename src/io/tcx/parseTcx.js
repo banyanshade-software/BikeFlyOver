@@ -29,6 +29,7 @@ function buildTrackpoint(rawTrackpoint) {
   const longitude = toNumber(rawTrackpoint?.Position?.LongitudeDegrees);
   const altitude = toNumber(rawTrackpoint?.AltitudeMeters);
   const time = rawTrackpoint?.Time;
+  const heartRate = toNumber(rawTrackpoint?.HeartRateBpm?.Value);
   const speed = toNumber(rawTrackpoint?.Extensions?.TPX?.Speed);
   const distance = toNumber(rawTrackpoint?.DistanceMeters);
   const timestamp = Date.parse(time);
@@ -49,6 +50,7 @@ function buildTrackpoint(rawTrackpoint) {
     longitude,
     altitude,
     distance: Number.isFinite(distance) ? distance : null,
+    heartRate: Number.isFinite(heartRate) ? heartRate : null,
     speed: Number.isFinite(speed) ? speed : null,
   };
 }

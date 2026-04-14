@@ -260,6 +260,59 @@
         </aside>
         <section class="viewer-panel" aria-label="Cesium viewer">
           <div id="cesiumContainer" class="viewer-canvas"></div>
+          <aside id="metricOverlay" class="metric-overlay" aria-live="polite">
+            <section class="metric-overlay__column metric-overlay__column--primary">
+              <article class="metric-card">
+                <p class="metric-card__title">Activity metrics</p>
+                <dl class="metric-card__grid">
+                  <div>
+                    <dt>Time</dt>
+                    <dd id="metricOverlayTime">--:--</dd>
+                  </div>
+                  <div>
+                    <dt>Distance</dt>
+                    <dd id="metricOverlayDistance">N/A</dd>
+                  </div>
+                  <div>
+                    <dt>Altitude</dt>
+                    <dd id="metricOverlayAltitude">N/A</dd>
+                  </div>
+                  <div id="metricOverlayHeartRateCardItem" hidden>
+                    <dt>Heart rate</dt>
+                    <dd id="metricOverlayHeartRate">N/A</dd>
+                  </div>
+                </dl>
+              </article>
+              <div class="metric-chip-row">
+                <div class="metric-chip">
+                  <span class="metric-chip__label">Speed</span>
+                  <span id="metricOverlaySpeedChip" class="metric-chip__value">N/A</span>
+                </div>
+                <div class="metric-chip">
+                  <span class="metric-chip__label">Progress</span>
+                  <span id="metricOverlayProgress" class="metric-chip__value">0.0%</span>
+                </div>
+              </div>
+            </section>
+            <section class="metric-overlay__column metric-overlay__column--secondary">
+              <article class="metric-gauge-card" aria-label="Speed gauge">
+                <div class="metric-gauge-card__header">
+                  <span class="metric-chip__label">Speed</span>
+                  <span id="metricOverlaySpeed" class="metric-gauge-card__value">N/A</span>
+                </div>
+                <div class="metric-gauge">
+                  <div
+                    id="metricOverlaySpeedGaugeFill"
+                    class="metric-gauge__fill"
+                    style="width: 0%;"
+                  ></div>
+                </div>
+                <p id="metricOverlaySpeedGaugeMeta" class="metric-gauge-card__meta">
+                  0% of current ride peak
+                </p>
+              </article>
+            </section>
+          </aside>
           <aside id="mediaPreviewOverlay" class="media-preview-overlay" hidden aria-live="polite">
             <article id="mediaPreviewCard" class="media-preview-card">
               <p id="mediaPreviewType" class="media-preview-badge">Media</p>

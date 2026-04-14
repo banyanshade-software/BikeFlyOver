@@ -198,6 +198,30 @@ function formatDistance(distanceMeters) {
   return `${Math.round(distanceMeters)} m`;
 }
 
+function formatOverlaySpeed(speedMetersPerSecond) {
+  if (!Number.isFinite(speedMetersPerSecond)) {
+    return "N/A";
+  }
+
+  return `${(speedMetersPerSecond * 3.6).toFixed(1)} km/h`;
+}
+
+function formatHeartRate(heartRate) {
+  if (!Number.isFinite(heartRate)) {
+    return "N/A";
+  }
+
+  return `${Math.round(heartRate)} bpm`;
+}
+
+function formatAltitudeValue(altitudeMeters) {
+  if (!Number.isFinite(altitudeMeters)) {
+    return "N/A";
+  }
+
+  return `${Math.round(altitudeMeters)} m`;
+}
+
 function clampProgressRatio(progressRatio) {
   if (!Number.isFinite(progressRatio)) {
     return 0;
@@ -1023,6 +1047,11 @@ function renderSummary(sampleTrack) {
 function createPlaybackState(trackpoints, options = {}) {
   const startTimestamp = trackpoints[0].timestamp;
   const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
+  const trackPeakSpeed = trackpoints.reduce((peakSpeed, trackpoint) => {
+    return Number.isFinite(trackpoint.speed)
+      ? Math.max(peakSpeed, trackpoint.speed)
+      : peakSpeed;
+  }, 0);
 
   return {
     trackpoints,
@@ -1041,6 +1070,7 @@ function createPlaybackState(trackpoints, options = {}) {
     currentSamplePosition: null,
     playedRoutePositionsScratch: [],
     routePositions: [],
+    trackPeakSpeed,
     camera: {
       mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
       adaptiveStrength:
@@ -1903,6 +1933,11 @@ function interpolateTrackpoint(playbackState) {
         ? null
         : startTrackpoint.distance +
           (endTrackpoint.distance - startTrackpoint.distance) * segmentRatio,
+    heartRate:
+      startTrackpoint.heartRate === null || endTrackpoint.heartRate === null
+        ? startTrackpoint.heartRate ?? endTrackpoint.heartRate ?? null
+        : startTrackpoint.heartRate +
+          (endTrackpoint.heartRate - startTrackpoint.heartRate) * segmentRatio,
     speed:
       startTrackpoint.speed === null || endTrackpoint.speed === null
         ? null
@@ -2010,6 +2045,63 @@ function updatePlaybackUI(playbackState) {
   }
 }
 
+function updateMetricOverlay(playbackState) {
+  const heartRateCardItem = document.getElementById("metricOverlayHeartRateCardItem");
+  const speedGaugeFill = document.getElementById("metricOverlaySpeedGaugeFill");
+  const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
+  const progressRatio = getPlaybackProgressRatio(playbackState);
+  const speedMetersPerSecond = playbackState.currentSample.speed;
+  const trackPeakSpeed = playbackState.trackPeakSpeed || 0;
+  const speedGaugeRatio =
+    Number.isFinite(speedMetersPerSecond) && trackPeakSpeed > 0
+      ? Math.min(1, Math.max(0, speedMetersPerSecond / trackPeakSpeed))
+      : 0;
+
+  setTextContent("metricOverlayTime", formatDuration(elapsedMs));
+  setTextContent(
+    "metricOverlayDistance",
+    formatDistance(playbackState.currentSample.distance),
+  );
+  setTextContent(
+    "metricOverlayAltitude",
+    formatAltitudeValue(playbackState.currentSample.altitude),
+  );
+  setTextContent(
+    "metricOverlaySpeed",
+    formatOverlaySpeed(speedMetersPerSecond),
+  );
+  setTextContent(
+    "metricOverlaySpeedChip",
+    formatOverlaySpeed(speedMetersPerSecond),
+  );
+  setTextContent("metricOverlayProgress", formatProgress(progressRatio));
+  setTextContent(
+    "metricOverlaySpeedGaugeMeta",
+    trackPeakSpeed > 0
+      ? `${Math.round(speedGaugeRatio * 100)}% of current ride peak`
+      : "No speed data available",
+  );
+
+  if (speedGaugeFill instanceof HTMLElement) {
+    speedGaugeFill.style.width = `${Math.round(speedGaugeRatio * 100)}%`;
+  }
+
+  if (!(heartRateCardItem instanceof HTMLElement)) {
+    return;
+  }
+
+  if (Number.isFinite(playbackState.currentSample.heartRate)) {
+    setTextContent(
+      "metricOverlayHeartRate",
+      formatHeartRate(playbackState.currentSample.heartRate),
+    );
+    heartRateCardItem.hidden = false;
+    return;
+  }
+
+  heartRateCardItem.hidden = true;
+}
+
 function syncPlaybackState(viewer, playbackState, options = {}) {
   advancePlaybackIndex(playbackState);
   interpolateTrackpoint(playbackState);
@@ -2026,6 +2118,10 @@ function syncPlaybackState(viewer, playbackState, options = {}) {
   if (options.updateUi !== false) {
     updatePlaybackUI(playbackState);
     updateCameraUI(playbackState);
+  }
+
+  if (options.updateMetricOverlay !== false) {
+    updateMetricOverlay(playbackState);
   }
 
   if (options.updateMediaPreview !== false) {
