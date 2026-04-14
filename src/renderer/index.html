@@ -149,6 +149,26 @@
                 <dd id="mediaLibraryStatus">No media imported yet.</dd>
               </div>
             </dl>
+            <div class="field-stack media-settings-stack">
+              <label class="field-group">
+                <span class="field-label">Photo export hold</span>
+                <input
+                  id="photoDisplayDurationInput"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value="5"
+                />
+              </label>
+              <label class="checkbox-group" for="photoKenBurnsCheckbox">
+                <input
+                  id="photoKenBurnsCheckbox"
+                  type="checkbox"
+                  checked
+                />
+                <span>Enable subtle Ken Burns effect on exported photos</span>
+              </label>
+            </div>
             <ul id="mediaLibraryList" class="media-library-list" aria-live="polite">
               <li class="media-library-empty">Imported photos and videos will appear here.</li>
             </ul>
@@ -249,6 +269,14 @@
                 alt=""
                 hidden
               />
+              <video
+                id="mediaPreviewVideo"
+                class="media-preview-video"
+                muted
+                playsinline
+                preload="metadata"
+                hidden
+              ></video>
               <div id="mediaPreviewFallback" class="media-preview-fallback" hidden>
                 <span id="mediaPreviewFallbackLabel">Preview unavailable</span>
               </div>

@@ -25,9 +25,11 @@ function normalizeTimestampResult({
   source,
   confidence = "metadata",
   originalValue,
+  mediaDurationMs = null,
 }) {
   if (!value) {
     return {
+      mediaDurationMs,
       timestampMetadataStatus: "missing",
       capturedAt: null,
       capturedAtTimestamp: null,
@@ -42,6 +44,7 @@ function normalizeTimestampResult({
 
   if (Number.isNaN(parsedDate.getTime())) {
     return {
+      mediaDurationMs,
       timestampMetadataStatus: "error",
       capturedAt: null,
       capturedAtTimestamp: null,
@@ -53,6 +56,7 @@ function normalizeTimestampResult({
   }
 
   return {
+    mediaDurationMs,
     timestampMetadataStatus: "extracted",
     capturedAt: parsedDate.toISOString(),
     capturedAtTimestamp: parsedDate.getTime(),
@@ -61,6 +65,16 @@ function normalizeTimestampResult({
     timestampConfidence: confidence,
     timestampMetadataError: null,
   };
+}
+
+function normalizeDurationMs(value) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  return Math.round(parsed * 1000);
 }
 
 async function extractImageTimestampMetadata(filePath) {
@@ -88,12 +102,15 @@ async function extractImageTimestampMetadata(filePath) {
     const selectedCandidate = candidates.find((candidate) => candidate.value);
 
     if (!selectedCandidate) {
-      return normalizeTimestampResult({});
+      return normalizeTimestampResult({
+        mediaDurationMs,
+      });
     }
 
     return normalizeTimestampResult(selectedCandidate);
   } catch (error) {
     return {
+      mediaDurationMs: null,
       timestampMetadataStatus: "error",
       capturedAt: null,
       capturedAtTimestamp: null,
@@ -123,7 +140,7 @@ function runFfprobe(filePath) {
         "-print_format",
         "json",
         "-show_entries",
-        "format_tags=creation_time,com.apple.quicktime.creationdate:stream_tags=creation_time,com.apple.quicktime.creationdate",
+        "format=duration:format_tags=creation_time,com.apple.quicktime.creationdate:stream_tags=creation_time,com.apple.quicktime.creationdate",
         filePath,
       ],
       {
@@ -170,6 +187,7 @@ async function extractVideoTimestampMetadata(filePath) {
   try {
     const ffprobeOutput = await runFfprobe(filePath);
     const formatTags = ffprobeOutput?.format?.tags || {};
+    const mediaDurationMs = normalizeDurationMs(ffprobeOutput?.format?.duration);
     const streamTags = Array.isArray(ffprobeOutput?.streams)
       ? ffprobeOutput.streams.flatMap((stream) => {
           return stream?.tags ? [stream.tags] : [];
@@ -205,10 +223,12 @@ async function extractVideoTimestampMetadata(filePath) {
 
     return normalizeTimestampResult({
       ...selectedCandidate,
+      mediaDurationMs,
       originalValue: selectedCandidate.value,
     });
   } catch (error) {
     return {
+      mediaDurationMs: null,
       timestampMetadataStatus: "error",
       capturedAt: null,
       capturedAtTimestamp: null,

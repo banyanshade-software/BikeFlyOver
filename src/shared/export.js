@@ -1,3 +1,12 @@
+const {
+  MEDIA_PRESENTATION_DEFAULTS,
+  buildMediaPresentationState,
+  compareMediaPresentationItems,
+  getMediaDurationMs,
+  getMediaPresentationTimeline,
+  normalizeMediaPresentationSettings,
+} = require("./media-presentation");
+
 const EXPORT_RESOLUTION_PRESETS = [
   {
     id: "landscape-360p",
@@ -66,6 +75,10 @@ const EXPORT_DEFAULTS = {
   settleTimeoutMs: 15000,
   settleStablePasses: 2,
   maxFrameRetries: 1,
+  photoDisplayDurationMs: MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
+  photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
+  enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
+  exitDurationMs: MEDIA_PRESENTATION_DEFAULTS.exitDurationMs,
 };
 
 function getResolutionPresetById(resolutionId) {
@@ -163,6 +176,7 @@ function normalizeExportSettings(rawSettings = {}) {
     settleTimeoutMs,
     settleStablePasses,
     maxFrameRetries,
+    ...normalizeMediaPresentationSettings(rawSettings),
   };
 }
 
@@ -336,7 +350,68 @@ function getSegmentVideoDurationMs(
   return activityDurationMs / settings.speedMultiplier;
 }
 
-function buildExportTimeline({ trackpoints, settings }) {
+function getTrackSegmentOverlap(segmentStart, segmentEnd, rangeStart, rangeEnd) {
+  const overlapStart = Math.max(segmentStart, rangeStart);
+  const overlapEnd = Math.min(segmentEnd, rangeEnd);
+
+  if (overlapEnd <= overlapStart) {
+    return null;
+  }
+
+  return {
+    overlapDurationMs: overlapEnd - overlapStart,
+    overlapEnd,
+    overlapStart,
+  };
+}
+
+function createMediaTimelineEntry(item, settings, endTimestamp) {
+  const presentationTimeline = getMediaPresentationTimeline(item, settings);
+
+  if (!presentationTimeline || !Number.isFinite(item.alignedActivityTimestamp)) {
+    return null;
+  }
+
+  const effectiveTimestamp = clamp(
+    item.alignedActivityTimestamp,
+    0,
+    endTimestamp,
+  );
+
+  if (item.mediaType === "video") {
+    const clampedDurationMs = Math.min(
+      presentationTimeline.activityAdvanceMs,
+      Math.max(0, endTimestamp - effectiveTimestamp),
+    );
+
+    if (clampedDurationMs <= 0) {
+      return null;
+    }
+
+    return {
+      activityAdvanceMs: clampedDurationMs,
+      alignedActivityTimestamp: effectiveTimestamp,
+      enterDurationMs: Math.min(presentationTimeline.enterDurationMs, clampedDurationMs),
+      exitDurationMs: Math.min(presentationTimeline.exitDurationMs, clampedDurationMs),
+      holdDurationMs: Math.max(
+        0,
+        clampedDurationMs -
+          Math.min(presentationTimeline.enterDurationMs, clampedDurationMs) -
+          Math.min(presentationTimeline.exitDurationMs, clampedDurationMs),
+      ),
+      item,
+      totalDurationMs: clampedDurationMs,
+    };
+  }
+
+  return {
+    ...presentationTimeline,
+    alignedActivityTimestamp: effectiveTimestamp,
+    item,
+  };
+}
+
+function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
   const normalizedSettings = normalizeExportSettings(settings);
   const safeTrackpoints = Array.isArray(trackpoints) ? trackpoints : [];
 
@@ -357,42 +432,133 @@ function buildExportTimeline({ trackpoints, settings }) {
     getTrackAverageSpeedMetersPerSecond(safeTrackpoints) *
       normalizedSettings.speedMultiplier,
   );
+  const sortedMediaItems = (Array.isArray(mediaItems) ? mediaItems : [])
+    .filter((item) => Number.isFinite(item?.alignedActivityTimestamp))
+    .sort(compareMediaPresentationItems)
+    .map((item) => createMediaTimelineEntry(item, normalizedSettings, endTimestamp))
+    .filter(Boolean);
   const segments = [];
   let totalVideoDurationMs = 0;
 
-  for (
-    let trackpointIndex = 0;
-    trackpointIndex < safeTrackpoints.length - 1;
-    trackpointIndex += 1
-  ) {
-    const startTrackpoint = safeTrackpoints[trackpointIndex];
-    const endTrackpoint = safeTrackpoints[trackpointIndex + 1];
-    const activityDurationMs = Math.max(
-      0,
-      endTrackpoint.timestamp - startTrackpoint.timestamp,
-    );
-    const videoDurationMs = getSegmentVideoDurationMs(
-      startTrackpoint,
-      endTrackpoint,
-      activityDurationMs,
-      normalizedSettings,
-      fixedSpeedMetersPerSecond,
-    );
-
-    if (videoDurationMs <= 0) {
-      continue;
+  const pushSegment = (segment) => {
+    if (!segment || segment.videoDurationMs <= 0) {
+      return;
     }
 
     segments.push({
-      activityDurationMs,
-      activityEndTimestamp: endTrackpoint.timestamp,
-      activityStartTimestamp: startTrackpoint.timestamp,
-      videoDurationMs,
-      videoEndMs: totalVideoDurationMs + videoDurationMs,
+      ...segment,
+      videoEndMs: totalVideoDurationMs + segment.videoDurationMs,
       videoStartMs: totalVideoDurationMs,
     });
-    totalVideoDurationMs += videoDurationMs;
+    totalVideoDurationMs += segment.videoDurationMs;
+  };
+
+  const addTrackSegmentsBetween = (rangeStart, rangeEnd) => {
+    if (rangeEnd <= rangeStart) {
+      return;
+    }
+
+    for (
+      let trackpointIndex = 0;
+      trackpointIndex < safeTrackpoints.length - 1;
+      trackpointIndex += 1
+    ) {
+      const startTrackpoint = safeTrackpoints[trackpointIndex];
+      const endTrackpoint = safeTrackpoints[trackpointIndex + 1];
+      const overlap = getTrackSegmentOverlap(
+        startTrackpoint.timestamp,
+        endTrackpoint.timestamp,
+        rangeStart,
+        rangeEnd,
+      );
+
+      if (!overlap) {
+        continue;
+      }
+
+      const fullActivityDurationMs = Math.max(
+        0,
+        endTrackpoint.timestamp - startTrackpoint.timestamp,
+      );
+
+      if (fullActivityDurationMs <= 0) {
+        continue;
+      }
+
+      const fullVideoDurationMs = getSegmentVideoDurationMs(
+        startTrackpoint,
+        endTrackpoint,
+        fullActivityDurationMs,
+        normalizedSettings,
+        fixedSpeedMetersPerSecond,
+      );
+      const videoDurationMs =
+        fullVideoDurationMs * (overlap.overlapDurationMs / fullActivityDurationMs);
+
+      pushSegment({
+        activityDurationMs: overlap.overlapDurationMs,
+        activityEndTimestamp: overlap.overlapEnd,
+        activityStartTimestamp: overlap.overlapStart,
+        kind: "track",
+        mediaItemId: null,
+        videoDurationMs,
+      });
+    }
+  };
+
+  let cursorTimestamp = startTimestamp;
+
+  for (const mediaEntry of sortedMediaItems) {
+    const mediaStartTimestamp = Math.max(
+      cursorTimestamp,
+      mediaEntry.alignedActivityTimestamp,
+    );
+
+    addTrackSegmentsBetween(cursorTimestamp, mediaStartTimestamp);
+
+    if (mediaEntry.item.mediaType === "video") {
+      const activityAdvanceMs = Math.min(
+        mediaEntry.activityAdvanceMs,
+        Math.max(0, endTimestamp - mediaStartTimestamp),
+      );
+
+      if (activityAdvanceMs <= 0) {
+        cursorTimestamp = mediaStartTimestamp;
+        continue;
+      }
+
+      pushSegment({
+        activityDurationMs: activityAdvanceMs,
+        activityEndTimestamp: mediaStartTimestamp + activityAdvanceMs,
+        activityStartTimestamp: mediaStartTimestamp,
+        enterDurationMs: mediaEntry.enterDurationMs,
+        exitDurationMs: mediaEntry.exitDurationMs,
+        holdDurationMs: mediaEntry.holdDurationMs,
+        kind: "video",
+        mediaItemId: mediaEntry.item.id,
+        mediaItem: mediaEntry.item,
+        videoDurationMs: activityAdvanceMs,
+      });
+      cursorTimestamp = mediaStartTimestamp + activityAdvanceMs;
+      continue;
+    }
+
+    pushSegment({
+      activityDurationMs: 0,
+      activityEndTimestamp: mediaStartTimestamp,
+      activityStartTimestamp: mediaStartTimestamp,
+      enterDurationMs: mediaEntry.enterDurationMs,
+      exitDurationMs: mediaEntry.exitDurationMs,
+      holdDurationMs: mediaEntry.holdDurationMs,
+      kind: "photo",
+      mediaItemId: mediaEntry.item.id,
+      mediaItem: mediaEntry.item,
+      videoDurationMs: mediaEntry.totalDurationMs,
+    });
+    cursorTimestamp = mediaStartTimestamp;
   }
+
+  addTrackSegmentsBetween(cursorTimestamp, endTimestamp);
 
   return {
     endTimestamp,
@@ -421,37 +587,9 @@ function computeExportFrameCount({
   return Math.max(1, Math.ceil((videoDurationMs / 1000) * fps) + 1);
 }
 
-function getExportActivityTimestamp({
-  endTimestamp,
-  exportTimeline,
-  frameIndex,
-  fps,
-  speedMultiplier,
-  startTimestamp,
-}) {
-  if (!exportTimeline) {
-    const videoTimeSeconds = frameIndex / fps;
-    const activityTimestamp =
-      startTimestamp + videoTimeSeconds * speedMultiplier * 1000;
-
-    return Math.min(endTimestamp, Math.max(startTimestamp, activityTimestamp));
-  }
-
-  if (exportTimeline.segments.length === 0) {
-    return exportTimeline.startTimestamp;
-  }
-
-  const videoTimeMs = Math.min(
-    exportTimeline.totalVideoDurationMs,
-    Math.max(0, (frameIndex / fps) * 1000),
-  );
-
-  if (videoTimeMs <= 0) {
-    return exportTimeline.startTimestamp;
-  }
-
-  if (videoTimeMs >= exportTimeline.totalVideoDurationMs) {
-    return exportTimeline.endTimestamp;
+function findTimelineSegment(exportTimeline, videoTimeMs) {
+  if (!exportTimeline || exportTimeline.segments.length === 0) {
+    return null;
   }
 
   let low = 0;
@@ -467,20 +605,123 @@ function getExportActivityTimestamp({
     }
   }
 
-  const segment = exportTimeline.segments[low];
-  const segmentRatio = clamp(
-    (videoTimeMs - segment.videoStartMs) / segment.videoDurationMs,
-    0,
-    1,
+  return exportTimeline.segments[low];
+}
+
+function getExportFrameState({
+  endTimestamp,
+  exportTimeline,
+  frameIndex,
+  fps,
+  speedMultiplier,
+  startTimestamp,
+}) {
+  if (!exportTimeline) {
+    const videoTimeSeconds = frameIndex / fps;
+    const activityTimestamp =
+      startTimestamp + videoTimeSeconds * speedMultiplier * 1000;
+
+    return {
+      activeMedia: null,
+      activityTimestamp: Math.min(
+        endTimestamp,
+        Math.max(startTimestamp, activityTimestamp),
+      ),
+      videoTimeMs: videoTimeSeconds * 1000,
+    };
+  }
+
+  if (exportTimeline.segments.length === 0) {
+    return {
+      activeMedia: null,
+      activityTimestamp: exportTimeline.startTimestamp,
+      videoTimeMs: 0,
+    };
+  }
+
+  const videoTimeMs = Math.min(
+    exportTimeline.totalVideoDurationMs,
+    Math.max(0, (frameIndex / fps) * 1000),
   );
 
-  return Math.min(
-    exportTimeline.endTimestamp,
-    Math.max(
-      exportTimeline.startTimestamp,
-      segment.activityStartTimestamp + segment.activityDurationMs * segmentRatio,
-    ),
+  if (videoTimeMs <= 0) {
+    return {
+      activeMedia: null,
+      activityTimestamp: exportTimeline.startTimestamp,
+      videoTimeMs: 0,
+    };
+  }
+
+  if (videoTimeMs >= exportTimeline.totalVideoDurationMs) {
+    return {
+      activeMedia: null,
+      activityTimestamp: exportTimeline.endTimestamp,
+      videoTimeMs: exportTimeline.totalVideoDurationMs,
+    };
+  }
+
+  const segment = findTimelineSegment(exportTimeline, videoTimeMs);
+
+  if (!segment) {
+    return {
+      activeMedia: null,
+      activityTimestamp: exportTimeline.endTimestamp,
+      videoTimeMs,
+    };
+  }
+
+  const localVideoTimeMs = clamp(
+    videoTimeMs - segment.videoStartMs,
+    0,
+    segment.videoDurationMs,
   );
+
+  if (segment.kind === "track") {
+    const segmentRatio =
+      segment.videoDurationMs > 0 ? localVideoTimeMs / segment.videoDurationMs : 0;
+
+    return {
+      activeMedia: null,
+      activityTimestamp: Math.min(
+        exportTimeline.endTimestamp,
+        Math.max(
+          exportTimeline.startTimestamp,
+          segment.activityStartTimestamp +
+            segment.activityDurationMs * clamp(segmentRatio, 0, 1),
+        ),
+      ),
+      videoTimeMs,
+    };
+  }
+
+  const mediaPresentation = buildMediaPresentationState(
+    segment.mediaItem,
+    localVideoTimeMs,
+    exportTimeline.settings,
+  );
+  const activityTimestamp =
+    segment.kind === "video"
+      ? Math.min(
+          exportTimeline.endTimestamp,
+          segment.activityStartTimestamp + localVideoTimeMs,
+        )
+      : segment.activityStartTimestamp;
+
+  return {
+    activeMedia: mediaPresentation
+      ? {
+          ...mediaPresentation,
+          itemId: segment.mediaItemId,
+          mediaType: segment.mediaItem?.mediaType || "image",
+        }
+      : null,
+    activityTimestamp,
+    videoTimeMs,
+  };
+}
+
+function getExportActivityTimestamp(options) {
+  return getExportFrameState(options).activityTimestamp;
 }
 
 function formatFrameFileName(frameNumber) {
@@ -496,5 +737,6 @@ module.exports = {
   computeExportFrameCount,
   formatFrameFileName,
   getExportActivityTimestamp,
+  getExportFrameState,
   normalizeExportSettings,
 };

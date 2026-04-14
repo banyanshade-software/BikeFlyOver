@@ -16,7 +16,7 @@ const {
   buildExportTimeline,
   computeExportFrameCount,
   formatFrameFileName,
-  getExportActivityTimestamp,
+  getExportFrameState,
   normalizeExportSettings,
 } = require("../shared/export");
 
@@ -304,7 +304,7 @@ async function renderExportFrame(session, frameIndex) {
       throw new Error("Export cancelled.");
     }
 
-    const activityTimestamp = getExportActivityTimestamp({
+    const frameState = getExportFrameState({
       exportTimeline: session.exportTimeline,
       frameIndex,
       fps: session.settings.fps,
@@ -313,9 +313,10 @@ async function renderExportFrame(session, frameIndex) {
     session.frameSettledDeferred = createDeferred();
     session.expectedFrameIndex = frameIndex;
     mainWindow.webContents.send("export-render-frame", {
+      activeMedia: frameState.activeMedia,
       frameIndex,
       totalFrames: session.totalFrames,
-      activityTimestamp,
+      activityTimestamp: frameState.activityTimestamp,
       settings: session.settings,
     });
 
@@ -421,6 +422,7 @@ async function startExport(settings) {
     throw new Error("An export session is already running.");
   }
 
+  const mediaItems = Array.isArray(settings?.mediaItems) ? settings.mediaItems : [];
   const normalizedSettings = normalizeExportSettings({
     ...EXPORT_DEFAULTS,
     ...settings,
@@ -437,6 +439,7 @@ async function startExport(settings) {
 
   const trackpoints = sampleTrack.trackpoints;
   const exportTimeline = buildExportTimeline({
+    mediaItems,
     trackpoints,
     settings: normalizedSettings,
   });

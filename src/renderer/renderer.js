@@ -11,6 +11,10 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     settleTimeoutMs: 15000,
     settleStablePasses: 2,
     maxFrameRetries: 1,
+    photoDisplayDurationMs: 5000,
+    photoKenBurnsEnabled: true,
+    enterDurationMs: 500,
+    exitDurationMs: 700,
   },
   resolutionPresets: [],
   cameraModes: [],
@@ -31,6 +35,7 @@ const mediaLibraryState = {
   statusMessage: "No media imported yet.",
   activePreviewItemId: null,
   previewEntities: [],
+  previewRequestToken: 0,
   progress: {
     indeterminate: false,
     label: "Idle",
@@ -39,9 +44,6 @@ const mediaLibraryState = {
   },
 };
 const TIMELINE_SLIDER_MAX = 1000;
-const MEDIA_PREVIEW_LEAD_IN_MS = 500;
-const MEDIA_PREVIEW_HOLD_MS = 1800;
-const MEDIA_PREVIEW_LEAD_OUT_MS = 700;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
 const TIMELINE_SCRUB_KEYS = new Set([
   "ArrowLeft",
@@ -405,6 +407,191 @@ function getMediaPreviewUrl(filePath) {
   return window.bikeFlyOverApp?.toFileUrl?.(filePath) || "";
 }
 
+function getMediaDurationMs(item) {
+  const candidates = [item?.mediaDurationMs, item?.durationMs];
+
+  for (const candidate of candidates) {
+    if (Number.isFinite(candidate) && candidate > 0) {
+      return candidate;
+    }
+  }
+
+  return 0;
+}
+
+function formatMediaDuration(durationMs) {
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return null;
+  }
+
+  return formatDuration(durationMs);
+}
+
+function readMediaPresentationSettings() {
+  const photoDisplayDurationInput = document.getElementById(
+    "photoDisplayDurationInput",
+  );
+  const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  const parsedPhotoDisplaySeconds =
+    photoDisplayDurationInput instanceof HTMLInputElement
+      ? Number(photoDisplayDurationInput.value)
+      : Number.NaN;
+
+  return {
+    enterDurationMs: EXPORT_OPTIONS.defaults.enterDurationMs ?? 500,
+    exitDurationMs: EXPORT_OPTIONS.defaults.exitDurationMs ?? 700,
+    photoDisplayDurationMs: Number.isFinite(parsedPhotoDisplaySeconds)
+      ? Math.max(1000, Math.round(parsedPhotoDisplaySeconds * 1000))
+      : EXPORT_OPTIONS.defaults.photoDisplayDurationMs ?? 5000,
+    photoKenBurnsEnabled:
+      photoKenBurnsCheckbox instanceof HTMLInputElement
+        ? photoKenBurnsCheckbox.checked
+        : EXPORT_OPTIONS.defaults.photoKenBurnsEnabled ?? true,
+    photoKenBurnsScale: 0.05,
+  };
+}
+
+function getMediaPresentationTimeline(item, settings) {
+  if (!item || !Number.isFinite(item.alignedActivityTimestamp)) {
+    return null;
+  }
+
+  if (item.mediaType === "video") {
+    const durationMs = getMediaDurationMs(item);
+
+    if (durationMs <= 0) {
+      return null;
+    }
+
+    const enterDurationMs = Math.min(settings.enterDurationMs, durationMs / 3);
+    const exitDurationMs = Math.min(settings.exitDurationMs, durationMs / 3);
+
+    return {
+      enterDurationMs,
+      exitDurationMs,
+      holdDurationMs: Math.max(0, durationMs - enterDurationMs - exitDurationMs),
+      totalDurationMs: durationMs,
+      videoCurrentTimeMs: durationMs,
+    };
+  }
+
+  return {
+    enterDurationMs: settings.enterDurationMs,
+    exitDurationMs: settings.exitDurationMs,
+    holdDurationMs: settings.photoDisplayDurationMs,
+    totalDurationMs:
+      settings.enterDurationMs +
+      settings.photoDisplayDurationMs +
+      settings.exitDurationMs,
+    videoCurrentTimeMs: 0,
+  };
+}
+
+function buildMediaPresentationState(item, elapsedMs, settings) {
+  const timeline = getMediaPresentationTimeline(item, settings);
+
+  if (!timeline) {
+    return null;
+  }
+
+  const safeElapsedMs = Math.min(
+    timeline.totalDurationMs,
+    Math.max(0, elapsedMs),
+  );
+  const exitStartMs = Math.max(
+    timeline.enterDurationMs + timeline.holdDurationMs,
+    timeline.totalDurationMs - timeline.exitDurationMs,
+  );
+  let opacity = 1;
+  let translateY = 0;
+  let scale = 1;
+
+  if (timeline.enterDurationMs > 0 && safeElapsedMs < timeline.enterDurationMs) {
+    const enterProgress = safeElapsedMs / timeline.enterDurationMs;
+
+    opacity = enterProgress;
+    translateY = 18 * (1 - enterProgress);
+    scale = 0.94 + 0.06 * enterProgress;
+  } else if (timeline.exitDurationMs > 0 && safeElapsedMs > exitStartMs) {
+    const exitProgress = Math.min(
+      1,
+      (safeElapsedMs - exitStartMs) / timeline.exitDurationMs,
+    );
+
+    opacity = 1 - exitProgress;
+    translateY = -10 * exitProgress;
+    scale = 1 + 0.03 * exitProgress;
+  }
+
+  const progressRatio =
+    timeline.totalDurationMs > 0 ? safeElapsedMs / timeline.totalDurationMs : 1;
+
+  return {
+    elapsedMs: safeElapsedMs,
+    imageScale:
+      item.mediaType === "image" && settings.photoKenBurnsEnabled
+        ? 1 + settings.photoKenBurnsScale * progressRatio
+        : 1,
+    opacity,
+    scale,
+    totalDurationMs: timeline.totalDurationMs,
+    translateY,
+    videoCurrentTimeMs:
+      item.mediaType === "video"
+        ? Math.min(safeElapsedMs, getMediaDurationMs(item))
+        : 0,
+  };
+}
+
+function getActivePreviewMediaPresentation(playbackTimestamp) {
+  const settings = readMediaPresentationSettings();
+  let bestMatch = null;
+
+  for (const item of mediaLibraryState.items) {
+    if (!Number.isFinite(item.alignedActivityTimestamp)) {
+      continue;
+    }
+
+    const timeline = getMediaPresentationTimeline(item, settings);
+
+    if (!timeline) {
+      continue;
+    }
+
+    const startTimestamp = item.alignedActivityTimestamp;
+    const endTimestamp = startTimestamp + timeline.totalDurationMs;
+
+    if (playbackTimestamp < startTimestamp || playbackTimestamp > endTimestamp) {
+      continue;
+    }
+
+    if (
+      !bestMatch ||
+      startTimestamp > bestMatch.startTimestamp ||
+      (startTimestamp === bestMatch.startTimestamp &&
+        item.fileName.localeCompare(bestMatch.item.fileName) < 0)
+    ) {
+      bestMatch = {
+        item,
+        startTimestamp,
+      };
+    }
+  }
+
+  if (!bestMatch) {
+    return null;
+  }
+
+  return {
+    item: bestMatch.item,
+    ...buildMediaPresentationState(
+      bestMatch.item,
+      playbackTimestamp - bestMatch.startTimestamp,
+      settings,
+    ),
+  };
+}
+
 function decorateMediaItemsForPreview(mediaItems) {
   return mediaItems.map((item) => {
     return {
@@ -486,81 +673,120 @@ function setMediaPreviewEntitiesVisibility(visible) {
   }
 }
 
-function getActiveMediaPreviewPresentation(playbackTimestamp) {
-  let bestMatch = null;
-
-  for (const item of mediaLibraryState.items) {
-    if (
-      item.alignmentStatus !== "aligned" ||
-      !Number.isFinite(item.alignedActivityTimestamp)
-    ) {
-      continue;
-    }
-
-    const startTimestamp = item.alignedActivityTimestamp - MEDIA_PREVIEW_LEAD_IN_MS;
-    const endTimestamp =
-      item.alignedActivityTimestamp +
-      MEDIA_PREVIEW_HOLD_MS +
-      MEDIA_PREVIEW_LEAD_OUT_MS;
-
-    if (playbackTimestamp < startTimestamp || playbackTimestamp > endTimestamp) {
-      continue;
-    }
-
-    const offsetMs = Math.abs(item.alignedActivityTimestamp - playbackTimestamp);
-
-    if (!bestMatch || offsetMs < bestMatch.offsetMs) {
-      const relativeTimestamp = playbackTimestamp - startTimestamp;
-      let opacity = 1;
-      let translateY = 0;
-      let scale = 1;
-
-      if (relativeTimestamp < MEDIA_PREVIEW_LEAD_IN_MS) {
-        const enterProgress = relativeTimestamp / MEDIA_PREVIEW_LEAD_IN_MS;
-
-        opacity = enterProgress;
-        translateY = 18 * (1 - enterProgress);
-        scale = 0.94 + 0.06 * enterProgress;
-      } else if (
-        relativeTimestamp >
-        MEDIA_PREVIEW_LEAD_IN_MS + MEDIA_PREVIEW_HOLD_MS
-      ) {
-        const exitProgress =
-          (relativeTimestamp - MEDIA_PREVIEW_LEAD_IN_MS - MEDIA_PREVIEW_HOLD_MS) /
-          MEDIA_PREVIEW_LEAD_OUT_MS;
-
-        opacity = 1 - exitProgress;
-        translateY = -10 * exitProgress;
-        scale = 1 + 0.03 * exitProgress;
-      }
-
-      bestMatch = {
-        item,
-        offsetMs,
-        opacity,
-        translateY,
-        scale,
-      };
-    }
-  }
-
-  return bestMatch;
-}
-
 function hideMediaPreviewOverlay() {
+  mediaLibraryState.previewRequestToken += 1;
   const overlayElement = document.getElementById("mediaPreviewOverlay");
+  const imageElement = document.getElementById("mediaPreviewImage");
+  const videoElement = document.getElementById("mediaPreviewVideo");
 
   if (overlayElement instanceof HTMLElement) {
     overlayElement.hidden = true;
   }
 
+  if (imageElement instanceof HTMLImageElement) {
+    imageElement.hidden = true;
+    imageElement.removeAttribute("src");
+    imageElement.style.transform = "";
+  }
+
+  if (videoElement instanceof HTMLVideoElement) {
+    videoElement.pause();
+    videoElement.hidden = true;
+    videoElement.style.transform = "";
+  }
+
   mediaLibraryState.activePreviewItemId = null;
 }
 
-function updateMediaPreviewOverlay(playbackState) {
+function waitForAnimationFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      resolve();
+    });
+  });
+}
+
+function waitForMediaElementEvent(target, eventName, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      window.clearTimeout(timeoutId);
+      target.removeEventListener(eventName, onEvent);
+      target.removeEventListener("error", onError);
+    };
+
+    const onEvent = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error(`Media element failed while waiting for ${eventName}.`));
+    };
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error(`Timed out waiting for media event "${eventName}".`));
+    }, timeoutMs);
+
+    target.addEventListener(eventName, onEvent, {
+      once: true,
+    });
+    target.addEventListener("error", onError, {
+      once: true,
+    });
+  });
+}
+
+async function syncPreviewVideoFrame(videoElement, item, currentTimeMs) {
+  const previewUrl = item.previewUrl || getMediaPreviewUrl(item.filePath);
+
+  if (!previewUrl) {
+    throw new Error("Video preview URL is unavailable.");
+  }
+
+  if (videoElement.dataset.mediaItemId !== item.id || videoElement.src !== previewUrl) {
+    videoElement.dataset.mediaItemId = item.id;
+    videoElement.src = previewUrl;
+    videoElement.load();
+  }
+
+  if (videoElement.readyState < HTMLMediaElement.HAVE_METADATA) {
+    await waitForMediaElementEvent(videoElement, "loadedmetadata");
+  }
+
+  const durationSeconds = Math.max(
+    0,
+    (Number.isFinite(videoElement.duration) ? videoElement.duration : 0) ||
+      getMediaDurationMs(item) / 1000,
+  );
+  const safeCurrentTimeSeconds =
+    durationSeconds > 0
+      ? Math.max(0, Math.min(currentTimeMs / 1000, durationSeconds - 0.001))
+      : 0;
+
+  if (Math.abs(videoElement.currentTime - safeCurrentTimeSeconds) > 0.04) {
+    const seekedPromise = waitForMediaElementEvent(videoElement, "seeked");
+
+    videoElement.currentTime = safeCurrentTimeSeconds;
+    await seekedPromise;
+  }
+
+  videoElement.pause();
+  await waitForAnimationFrame();
+}
+
+async function updateMediaPreviewOverlay(playbackState, options = {}) {
+  const requestToken = ++mediaLibraryState.previewRequestToken;
   const overlayElement = document.getElementById("mediaPreviewOverlay");
   const cardElement = document.getElementById("mediaPreviewCard");
   const imageElement = document.getElementById("mediaPreviewImage");
+  const videoElement = document.getElementById("mediaPreviewVideo");
   const fallbackElement = document.getElementById("mediaPreviewFallback");
   const fallbackLabelElement = document.getElementById("mediaPreviewFallbackLabel");
 
@@ -568,69 +794,122 @@ function updateMediaPreviewOverlay(playbackState) {
     !(overlayElement instanceof HTMLElement) ||
     !(cardElement instanceof HTMLElement) ||
     !(imageElement instanceof HTMLImageElement) ||
+    !(videoElement instanceof HTMLVideoElement) ||
     !(fallbackElement instanceof HTMLDivElement) ||
     !(fallbackLabelElement instanceof HTMLElement)
   ) {
     return;
   }
 
-  if (
-    RENDER_MODE !== "preview" ||
-    !document.body.classList.contains("export-session-active")
-  ) {
-    overlayElement.hidden = true;
-    mediaLibraryState.activePreviewItemId = null;
+  if (RENDER_MODE !== "preview") {
+    hideMediaPreviewOverlay();
     return;
   }
 
-  const presentation = getActiveMediaPreviewPresentation(
-    playbackState.currentTimestamp,
+  const hasExportPresentation = Object.prototype.hasOwnProperty.call(
+    options,
+    "exportActiveMedia",
   );
+  const presentation = hasExportPresentation
+    ? options.exportActiveMedia && Number.isFinite(options.exportActiveMedia.elapsedMs)
+      ? {
+          item: mediaLibraryState.items.find((item) => {
+            return item.id === options.exportActiveMedia.itemId;
+          }),
+          ...options.exportActiveMedia,
+        }
+      : null
+    : getActivePreviewMediaPresentation(playbackState.currentTimestamp);
 
-  if (!presentation) {
-    overlayElement.hidden = true;
-    imageElement.removeAttribute("src");
-    mediaLibraryState.activePreviewItemId = null;
+  if (!presentation || !presentation.item) {
+    hideMediaPreviewOverlay();
     return;
   }
 
-  const { item: activeItem, opacity, scale, translateY } = presentation;
+  const { item: activeItem, imageScale, opacity, scale, translateY } = presentation;
 
   cardElement.style.opacity = String(opacity);
   cardElement.style.transform = `translateY(${translateY}px) scale(${scale})`;
+  imageElement.style.transform = `scale(${imageScale})`;
+  videoElement.style.transform = `scale(${imageScale})`;
 
-  if (mediaLibraryState.activePreviewItemId !== activeItem.id) {
-    mediaLibraryState.activePreviewItemId = activeItem.id;
+  setTextContent("mediaPreviewType", formatMediaType(activeItem.mediaType));
+  setTextContent("mediaPreviewName", activeItem.fileName);
 
-    setTextContent("mediaPreviewType", formatMediaType(activeItem.mediaType));
-    setTextContent("mediaPreviewName", activeItem.fileName);
+  if (activeItem.mediaType === "video" && Number.isFinite(presentation.elapsedMs)) {
+    const progressLabel = [
+      formatMediaDuration(presentation.videoCurrentTimeMs),
+      formatMediaDuration(getMediaDurationMs(activeItem)),
+    ]
+      .filter(Boolean)
+      .join(" / ");
+
+    setTextContent(
+      "mediaPreviewTime",
+      activeItem.alignedActivityTime
+        ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}${progressLabel ? ` · ${progressLabel}` : ""}`
+        : progressLabel || "Aligned media preview",
+    );
+  } else {
     setTextContent(
       "mediaPreviewTime",
       activeItem.alignedActivityTime
         ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}`
         : "Aligned media preview",
     );
+  }
 
-    imageElement.alt = `${formatMediaType(activeItem.mediaType)} preview for ${activeItem.fileName}`;
-    imageElement.onerror = null;
+  mediaLibraryState.activePreviewItemId = activeItem.id;
+  imageElement.alt = `${formatMediaType(activeItem.mediaType)} preview for ${activeItem.fileName}`;
+  imageElement.onerror = null;
 
-    if (activeItem.mediaType === "image" && activeItem.previewUrl) {
-      fallbackElement.hidden = true;
-      fallbackLabelElement.textContent = "Preview unavailable";
-      imageElement.hidden = false;
-      imageElement.onerror = () => {
-        imageElement.hidden = true;
-        fallbackElement.hidden = false;
-        fallbackLabelElement.textContent = "Image preview unavailable";
-      };
-      imageElement.src = activeItem.previewUrl;
-    } else {
+  if (activeItem.mediaType === "image" && activeItem.previewUrl) {
+    videoElement.pause();
+    videoElement.hidden = true;
+    fallbackElement.hidden = true;
+    fallbackLabelElement.textContent = "Preview unavailable";
+    imageElement.hidden = false;
+    imageElement.onerror = () => {
       imageElement.hidden = true;
-      imageElement.removeAttribute("src");
+      fallbackElement.hidden = false;
+      fallbackLabelElement.textContent = "Image preview unavailable";
+    };
+
+    if (imageElement.src !== activeItem.previewUrl) {
+      imageElement.src = activeItem.previewUrl;
+    }
+  } else if (activeItem.mediaType === "video" && getMediaDurationMs(activeItem) > 0) {
+    imageElement.hidden = true;
+    imageElement.removeAttribute("src");
+    fallbackElement.hidden = true;
+    videoElement.hidden = false;
+
+    try {
+      await syncPreviewVideoFrame(
+        videoElement,
+        activeItem,
+        presentation.videoCurrentTimeMs,
+      );
+
+      if (requestToken !== mediaLibraryState.previewRequestToken) {
+        return;
+      }
+    } catch (error) {
+      videoElement.hidden = true;
       fallbackElement.hidden = false;
       fallbackLabelElement.textContent =
-        activeItem.mediaType === "video" ? "Video clip preview" : "Preview unavailable";
+        error instanceof Error ? error.message : "Video clip preview unavailable";
     }
+  } else {
+    imageElement.hidden = true;
+    imageElement.removeAttribute("src");
+    videoElement.pause();
+    videoElement.hidden = true;
+    fallbackElement.hidden = false;
+    fallbackLabelElement.textContent =
+      activeItem.mediaType === "video"
+        ? "Video duration unavailable"
+        : "Preview unavailable";
   }
 
   overlayElement.hidden = false;
@@ -700,6 +979,8 @@ function createPlaybackState(trackpoints, options = {}) {
     routePositions: [],
     camera: {
       mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
+      adaptiveStrength:
+        options.adaptiveStrength ?? EXPORT_OPTIONS.defaults.adaptiveStrength,
       smoothedFocus: null,
       smoothedHeading: null,
       routeBoundingSphere: null,
@@ -1032,22 +1313,28 @@ function getLocalDirectionHeading(localDirection) {
   return Math.atan2(localDirection.x, localDirection.y);
 }
 
-function getFollowCameraComplexity(
+function analyzeFollowCameraManeuver(
   Cesium,
   playbackState,
   currentPosition,
   inverseTransform,
 ) {
   const lookAheadLimit = Math.min(
-    playbackState.currentIndex + 12,
+    playbackState.currentIndex + 24,
     playbackState.routePositions.length - 1,
   );
   let previousHeading = null;
+  let firstHeading = null;
+  let finalHeading = null;
   let cumulativeHeadingDelta = 0;
   let largestHeadingDelta = 0;
   let turnReversalCount = 0;
   let alternatingTurnCount = 0;
   let previousSignedDelta = 0;
+  let minLocalX = 0;
+  let maxLocalX = 0;
+  let minLocalY = 0;
+  let maxLocalY = 0;
 
   for (
     let trackpointIndex = playbackState.currentIndex + 1;
@@ -1074,6 +1361,24 @@ function getFollowCameraComplexity(
     }
 
     const heading = getLocalDirectionHeading(localDirection);
+    const offsetFromCurrent = Cesium.Matrix4.multiplyByPointAsVector(
+      inverseTransform,
+      Cesium.Cartesian3.subtract(
+        candidatePosition,
+        currentPosition,
+        new Cesium.Cartesian3(),
+      ),
+      new Cesium.Cartesian3(),
+    );
+
+    minLocalX = Math.min(minLocalX, offsetFromCurrent.x);
+    maxLocalX = Math.max(maxLocalX, offsetFromCurrent.x);
+    minLocalY = Math.min(minLocalY, offsetFromCurrent.y);
+    maxLocalY = Math.max(maxLocalY, offsetFromCurrent.y);
+
+    if (firstHeading === null) {
+      firstHeading = heading;
+    }
 
     if (previousHeading !== null) {
       const signedDelta = Cesium.Math.negativePiToPi(heading - previousHeading);
@@ -1098,9 +1403,10 @@ function getFollowCameraComplexity(
     }
 
     previousHeading = heading;
+    finalHeading = heading;
   }
 
-  return Cesium.Math.clamp(
+  const routeComplexity = Cesium.Math.clamp(
     cumulativeHeadingDelta / Cesium.Math.toRadians(165) +
       largestHeadingDelta / Cesium.Math.toRadians(80) * 0.45 +
       turnReversalCount * 0.42 +
@@ -1108,6 +1414,34 @@ function getFollowCameraComplexity(
     0,
     1,
   );
+  const lateralSpanMeters = maxLocalX - minLocalX;
+  const forwardSpanMeters = Math.max(0, maxLocalY - minLocalY);
+  const backwardTravelMeters = Math.max(0, -minLocalY);
+  const netHeadingDelta =
+    firstHeading === null || finalHeading === null
+      ? 0
+      : Math.abs(Cesium.Math.negativePiToPi(finalHeading - firstHeading));
+  const shouldHoldHeading =
+    routeComplexity > 0.3 &&
+    lateralSpanMeters < 18 &&
+    netHeadingDelta < Cesium.Math.toRadians(18) &&
+    backwardTravelMeters < 8;
+
+  return {
+    backwardTravelMeters,
+    exitHeading: finalHeading,
+    forwardSpanMeters,
+    lateralSpanMeters,
+    routeComplexity,
+    stabilityBias: Cesium.Math.clamp(
+      routeComplexity * 0.65 +
+        Cesium.Math.clamp(lateralSpanMeters / 55, 0, 1) * 0.2 +
+        Cesium.Math.clamp(backwardTravelMeters / 70, 0, 1) * 0.4,
+      0,
+      1,
+    ),
+    shouldHoldHeading,
+  };
 }
 
 function getStableFollowHeading(
@@ -1115,6 +1449,7 @@ function getStableFollowHeading(
   playbackState,
   currentPosition,
   inverseTransform,
+  maneuverAnalysis,
 ) {
   const { nearPosition, farPosition } = getFollowCameraLookAheadTargets(
     Cesium,
@@ -1139,6 +1474,20 @@ function getStableFollowHeading(
   }
 
   const blendedDirection = new Cesium.Cartesian3(0, 0, 0);
+  const adaptiveStrength = Cesium.Math.clamp(
+    playbackState.camera.adaptiveStrength ?? EXPORT_OPTIONS.defaults.adaptiveStrength,
+    0.25,
+    3,
+  );
+  const stabilityBias = Cesium.Math.clamp(
+    (maneuverAnalysis?.stabilityBias ?? 0) * (0.55 + adaptiveStrength * 0.25),
+    0,
+    1,
+  );
+  const nearWeight = maneuverAnalysis?.shouldHoldHeading
+    ? 0.08
+    : Cesium.Math.lerp(0.72, 0.2, stabilityBias);
+  const farWeight = 1 - nearWeight;
 
   if (nearDirection) {
     const normalizedNearDirection = Cesium.Cartesian3.normalize(
@@ -1149,7 +1498,7 @@ function getStableFollowHeading(
       blendedDirection,
       Cesium.Cartesian3.multiplyByScalar(
         normalizedNearDirection,
-        0.7,
+        nearWeight,
         new Cesium.Cartesian3(),
       ),
       blendedDirection,
@@ -1165,7 +1514,7 @@ function getStableFollowHeading(
       blendedDirection,
       Cesium.Cartesian3.multiplyByScalar(
         normalizedFarDirection,
-        0.3,
+        farWeight,
         new Cesium.Cartesian3(),
       ),
       blendedDirection,
@@ -1189,6 +1538,7 @@ function updateSmoothedFollowCameraState(
   desiredFocus,
   desiredHeading,
   useSmoothing,
+  maneuverAnalysis,
 ) {
   if (!useSmoothing || !playbackState.camera.smoothedFocus) {
     playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
@@ -1220,11 +1570,14 @@ function updateSmoothedFollowCameraState(
     0,
     1,
   );
+  const stabilityBias = maneuverAnalysis?.stabilityBias ?? 0;
+  const focusResponsiveness = Cesium.Math.lerp(0.24, 0.1, stabilityBias);
+  const headingResponsiveness = Cesium.Math.lerp(0.28, 0.08, stabilityBias);
 
   Cesium.Cartesian3.lerp(
     playbackState.camera.smoothedFocus,
     desiredFocus,
-    Cesium.Math.lerp(0.16, 0.28, turnSharpness),
+    Cesium.Math.lerp(focusResponsiveness * 0.8, focusResponsiveness, turnSharpness),
     playbackState.camera.smoothedFocus,
   );
 
@@ -1234,7 +1587,12 @@ function updateSmoothedFollowCameraState(
 
   playbackState.camera.smoothedHeading = Cesium.Math.negativePiToPi(
     playbackState.camera.smoothedHeading +
-      headingDelta * Cesium.Math.lerp(0.12, 0.34, turnSharpness),
+      headingDelta *
+        Cesium.Math.lerp(
+          headingResponsiveness * 0.7,
+          headingResponsiveness,
+          turnSharpness,
+        ),
   );
 }
 
@@ -1261,17 +1619,35 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     transform,
     new Cesium.Matrix4(),
   );
-  const routeComplexity = getFollowCameraComplexity(
+  const maneuverAnalysis = analyzeFollowCameraManeuver(
     Cesium,
     playbackState,
     currentPosition,
     inverseTransform,
   );
+  const adaptiveStrength = Cesium.Math.clamp(
+    playbackState.camera.adaptiveStrength ?? EXPORT_OPTIONS.defaults.adaptiveStrength,
+    0.25,
+    3,
+  );
+  const routeComplexity = Cesium.Math.clamp(
+    maneuverAnalysis.routeComplexity * (0.55 + adaptiveStrength * 0.2) +
+      maneuverAnalysis.stabilityBias * 0.35,
+    0,
+    1,
+  );
+  const elevatedComplexity = Cesium.Math.clamp(
+    routeComplexity +
+      Cesium.Math.clamp(maneuverAnalysis.lateralSpanMeters / 70, 0, 1) * 0.25 +
+      Cesium.Math.clamp(maneuverAnalysis.backwardTravelMeters / 90, 0, 1) * 0.4,
+    0,
+    1,
+  );
   const desiredFocus = Cesium.Cartesian3.add(
     currentPosition,
     Cesium.Cartesian3.multiplyByScalar(
       up,
-      Cesium.Math.lerp(8, 30, routeComplexity),
+      Cesium.Math.lerp(8, 42, elevatedComplexity),
       new Cesium.Cartesian3(),
     ),
     new Cesium.Cartesian3(),
@@ -1281,6 +1657,7 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     playbackState,
     currentPosition,
     inverseTransform,
+    maneuverAnalysis,
   );
 
   if (
@@ -1292,8 +1669,20 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     );
     desiredHeading = Cesium.Math.negativePiToPi(
       playbackState.camera.smoothedHeading +
-        desiredHeadingDelta * Cesium.Math.lerp(1, 0.38, routeComplexity),
+        desiredHeadingDelta *
+          Cesium.Math.lerp(
+            1,
+            maneuverAnalysis.shouldHoldHeading ? 0.12 : 0.28,
+            routeComplexity,
+          ),
     );
+  }
+
+  if (
+    maneuverAnalysis.shouldHoldHeading &&
+    Number.isFinite(maneuverAnalysis.exitHeading)
+  ) {
+    desiredHeading = maneuverAnalysis.exitHeading;
   }
 
   updateSmoothedFollowCameraState(
@@ -1302,6 +1691,7 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     desiredFocus,
     desiredHeading,
     useSmoothing,
+    maneuverAnalysis,
   );
 
   if (
@@ -1313,9 +1703,9 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
 
   const heading = playbackState.camera.smoothedHeading;
   const pitch = Cesium.Math.toRadians(
-    Cesium.Math.lerp(-45, -62, routeComplexity),
+    Cesium.Math.lerp(-45, -68, elevatedComplexity),
   );
-  const range = Cesium.Math.lerp(190, 310, routeComplexity);
+  const range = Cesium.Math.lerp(190, 390, elevatedComplexity);
   const localOffset = new Cesium.Cartesian3(
     -Math.sin(heading) * Math.cos(pitch) * range,
     -Math.cos(heading) * Math.cos(pitch) * range,
@@ -1575,7 +1965,7 @@ function syncPlaybackState(viewer, playbackState, options = {}) {
   }
 
   if (options.updateMediaPreview !== false) {
-    updateMediaPreviewOverlay(playbackState);
+    void updateMediaPreviewOverlay(playbackState);
   }
 }
 
@@ -1843,6 +2233,10 @@ function populateExportControls() {
   const adaptiveStrengthInput = document.getElementById(
     "exportAdaptiveStrengthInput",
   );
+  const photoDisplayDurationInput = document.getElementById(
+    "photoDisplayDurationInput",
+  );
+  const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
 
   populateSelect(
     resolutionSelect,
@@ -1870,6 +2264,20 @@ function populateExportControls() {
 
   if (adaptiveStrengthInput instanceof HTMLInputElement) {
     adaptiveStrengthInput.value = String(EXPORT_OPTIONS.defaults.adaptiveStrength);
+  }
+
+  if (photoDisplayDurationInput instanceof HTMLInputElement) {
+    photoDisplayDurationInput.value = String(
+      Math.max(
+        1,
+        Math.round((EXPORT_OPTIONS.defaults.photoDisplayDurationMs ?? 5000) / 1000),
+      ),
+    );
+  }
+
+  if (photoKenBurnsCheckbox instanceof HTMLInputElement) {
+    photoKenBurnsCheckbox.checked =
+      EXPORT_OPTIONS.defaults.photoKenBurnsEnabled ?? true;
   }
 
   updateExportTimingControls();
@@ -1925,7 +2333,13 @@ function updateMediaLibraryUi() {
 
     const meta = document.createElement("p");
     meta.className = "media-library-meta";
-    meta.textContent = `${formatMediaType(item.mediaType)} · ${item.filePath}`;
+    meta.textContent = [
+      formatMediaType(item.mediaType),
+      formatMediaDuration(getMediaDurationMs(item)),
+      item.filePath,
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
     const status = document.createElement("p");
     status.className = "media-library-status";
@@ -2035,7 +2449,7 @@ function setupMediaLibraryControls(viewer, sampleTrack) {
       mediaLibraryState.isImporting = false;
       updateMediaLibraryUi();
       if (window.playbackState) {
-        updateMediaPreviewOverlay(window.playbackState);
+        void updateMediaPreviewOverlay(window.playbackState);
       }
     }
   });
@@ -2072,6 +2486,8 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("exportSpeedInput", exportUiState.isExporting);
   setElementDisabled("exportAdaptiveStrengthInput", exportUiState.isExporting);
   setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
+  setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
+  setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
   setElementDisabled(
     "importMediaButton",
     exportUiState.isExporting || mediaLibraryState.isImporting,
@@ -2087,6 +2503,7 @@ function readExportSettings() {
     "exportAdaptiveStrengthInput",
   );
   const cameraModeSelect = document.getElementById("exportCameraModeSelect");
+  const mediaPresentationSettings = readMediaPresentationSettings();
 
   return {
     resolutionId:
@@ -2113,6 +2530,9 @@ function readExportSettings() {
       cameraModeSelect instanceof HTMLSelectElement
         ? cameraModeSelect.value
         : EXPORT_OPTIONS.defaults.cameraMode,
+    mediaItems: mediaLibraryState.items,
+    photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
+    photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
   };
 }
 
@@ -2120,9 +2540,24 @@ function setupExportControls() {
   const startExportButton = document.getElementById("startExportButton");
   const cancelExportButton = document.getElementById("cancelExportButton");
   const timingModeSelect = document.getElementById("exportTimingModeSelect");
+  const photoDisplayDurationInput = document.getElementById(
+    "photoDisplayDurationInput",
+  );
+  const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
 
   timingModeSelect?.addEventListener("change", () => {
     updateExportTimingControls();
+  });
+
+  photoDisplayDurationInput?.addEventListener("input", () => {
+    if (window.playbackState) {
+      void updateMediaPreviewOverlay(window.playbackState);
+    }
+  });
+  photoKenBurnsCheckbox?.addEventListener("change", () => {
+    if (window.playbackState) {
+      void updateMediaPreviewOverlay(window.playbackState);
+    }
   });
 
   window.bikeFlyOverApp?.onExportStatus((statusUpdate) => {
@@ -2178,6 +2613,7 @@ function setupExportControls() {
 
 function createPreviewSnapshot(playbackState) {
   return {
+    adaptiveStrength: playbackState.camera.adaptiveStrength,
     cameraMode: playbackState.camera.mode,
     currentTimestamp: playbackState.currentTimestamp,
     isPlaying: playbackState.isPlaying,
@@ -2193,6 +2629,7 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   playbackState.export.cancelRequested = false;
   playbackState.speedMultiplier = previewSnapshot.speedMultiplier;
   playbackState.camera.mode = previewSnapshot.cameraMode;
+  playbackState.camera.adaptiveStrength = previewSnapshot.adaptiveStrength;
   playbackState.isPlaying = false;
   resetFollowCameraSmoothing(playbackState);
   setPlaybackTimestamp(viewer, playbackState, previewSnapshot.currentTimestamp);
@@ -2279,10 +2716,16 @@ async function renderExportFrame(viewer, playbackState, payload) {
   playbackState.isPlaying = false;
   playbackState.speedMultiplier = payload.settings.speedMultiplier;
   playbackState.camera.mode = payload.settings.cameraMode;
+  playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
   resetFollowCameraSmoothing(playbackState);
   setPlaybackTimestamp(viewer, playbackState, payload.activityTimestamp, {
+    updateMediaPreview: false,
     updateUi: false,
     deterministicCamera: true,
+  });
+  await updateMediaPreviewOverlay(playbackState, {
+    awaitVideoFrame: true,
+    exportActiveMedia: payload.activeMedia || null,
   });
   await settleSceneForCapture(viewer, payload.settings, () => {
     return playbackState.export.cancelRequested;
@@ -2314,11 +2757,14 @@ function setupExportRenderBridge(viewer, playbackState) {
     viewer.resize();
     playbackState.speedMultiplier = payload.settings.speedMultiplier;
     playbackState.camera.mode = payload.settings.cameraMode;
+    playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
     resetFollowCameraSmoothing(playbackState);
     setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
+      updateMediaPreview: false,
       updateUi: false,
       deterministicCamera: true,
     });
+    hideMediaPreviewOverlay();
 
     try {
       await settleSceneForCapture(viewer, payload.settings, () => false);
@@ -2337,7 +2783,7 @@ function setupExportRenderBridge(viewer, playbackState) {
     viewer.resize();
     setMediaPreviewEntitiesVisibility(true);
     restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
-    updateMediaPreviewOverlay(playbackState);
+    void updateMediaPreviewOverlay(playbackState);
     exportBridgeState.previewSnapshot = null;
   });
 
@@ -2368,6 +2814,7 @@ async function initializeApp() {
     const viewer = createViewer(RENDER_MODE);
     const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
     const playbackState = createPlaybackState(sampleTrack.trackpoints, {
+      adaptiveStrength: EXPORT_OPTIONS.defaults.adaptiveStrength,
       speedMultiplier: EXPORT_OPTIONS.defaults.speedMultiplier,
       cameraMode: EXPORT_OPTIONS.defaults.cameraMode,
     });
@@ -2406,7 +2853,7 @@ async function initializeApp() {
         totalFrames: 0,
       });
       updateMediaLibraryUi();
-      updateMediaPreviewOverlay(playbackState);
+      void updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
       setupMediaLibraryControls(viewer, sampleTrack);
       setupPlaybackControls(viewer, playbackState);
