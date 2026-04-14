@@ -297,6 +297,35 @@ body {
   padding: 0.8rem 0.9rem;
 }
 
+.media-library-item {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.media-library-thumbnail {
+  width: 88px;
+  aspect-ratio: 1;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(121, 189, 255, 0.16);
+  background:
+    linear-gradient(135deg, rgba(24, 71, 107, 0.96), rgba(10, 28, 42, 0.92));
+  color: #e6f3ff;
+  display: grid;
+  place-items: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  object-fit: cover;
+  overflow: hidden;
+}
+
+.media-library-content {
+  min-width: 0;
+}
+
 .media-library-empty {
   color: #b8d8f6;
   font-size: 0.92rem;

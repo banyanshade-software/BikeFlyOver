@@ -100,6 +100,95 @@ function emitExportStatus(payload) {
   mainWindow?.webContents.send("export-status", payload);
 }
 
+function runCommand(command, args) {
+  return new Promise((resolve, reject) => {
+    const stdoutChunks = [];
+    const stderrChunks = [];
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    child.stdout.on("data", (chunk) => {
+      stdoutChunks.push(chunk);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderrChunks.push(chunk);
+    });
+    child.on("error", (error) => {
+      reject(error);
+    });
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({
+          stdout: Buffer.concat(stdoutChunks).toString("utf8"),
+          stderr: Buffer.concat(stderrChunks).toString("utf8"),
+        });
+        return;
+      }
+
+      reject(
+        new Error(
+          Buffer.concat(stderrChunks).toString("utf8").trim() ||
+            `${command} exited with status ${code}.`,
+        ),
+      );
+    });
+  });
+}
+
+function getImageMimeType(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+
+  if (extension === ".png") {
+    return "image/png";
+  }
+
+  if (extension === ".jpg" || extension === ".jpeg") {
+    return "image/jpeg";
+  }
+
+  return null;
+}
+
+async function generateImagePreviewUrl(filePath) {
+  const mimeType = getImageMimeType(filePath);
+
+  if (mimeType) {
+    const imageBuffer = await fs.readFile(filePath);
+
+    return `data:${mimeType};base64,${imageBuffer.toString("base64")}`;
+  }
+
+  if (process.platform !== "darwin" || path.extname(filePath).toLowerCase() !== ".heic") {
+    return null;
+  }
+
+  const tempPreviewPath = path.join(
+    os.tmpdir(),
+    `bikeflyover-preview-${randomUUID()}.png`,
+  );
+
+  try {
+    await runCommand("sips", [
+      "-s",
+      "format",
+      "png",
+      "-Z",
+      "1600",
+      filePath,
+      "--out",
+      tempPreviewPath,
+    ]);
+    const previewBuffer = await fs.readFile(tempPreviewPath);
+
+    return `data:image/png;base64,${previewBuffer.toString("base64")}`;
+  } finally {
+    await fs.rm(tempPreviewPath, {
+      force: true,
+    });
+  }
+}
+
 async function normalizeImportedMediaPaths(filePaths) {
   const importedMedia = await Promise.all(
     filePaths.map(async (filePath) => {
@@ -113,12 +202,15 @@ async function normalizeImportedMediaPaths(filePaths) {
         filePath,
         mediaType,
       );
+      const previewUrl =
+        mediaType === "image" ? await generateImagePreviewUrl(filePath) : null;
 
       return {
         id: randomUUID(),
         filePath,
         fileName: path.basename(filePath),
         mediaType,
+        previewUrl,
         ...timestampMetadata,
       };
     }),

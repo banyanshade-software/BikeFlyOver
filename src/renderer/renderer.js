@@ -407,6 +407,10 @@ function getMediaPreviewUrl(filePath) {
   return window.bikeFlyOverApp?.toFileUrl?.(filePath) || "";
 }
 
+function getImagePreviewUrl(item) {
+  return item.previewUrl || "";
+}
+
 function getMediaDurationMs(item) {
   const candidates = [item?.mediaDurationMs, item?.durationMs];
 
@@ -596,7 +600,10 @@ function decorateMediaItemsForPreview(mediaItems) {
   return mediaItems.map((item) => {
     return {
       ...item,
-      previewUrl: item.previewUrl || getMediaPreviewUrl(item.filePath),
+      previewUrl:
+        item.mediaType === "image"
+          ? getImagePreviewUrl(item)
+          : item.previewUrl || getMediaPreviewUrl(item.filePath),
     };
   });
 }
@@ -743,6 +750,44 @@ function waitForMediaElementEvent(target, eventName, timeoutMs = 4000) {
   });
 }
 
+function waitForImageLoad(imageElement, src, timeoutMs = 4000) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      window.clearTimeout(timeoutId);
+      imageElement.removeEventListener("load", onLoad);
+      imageElement.removeEventListener("error", onError);
+    };
+
+    const onLoad = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("Image preview unavailable"));
+    };
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      reject(new Error("Timed out waiting for image preview."));
+    }, timeoutMs);
+
+    imageElement.addEventListener("load", onLoad, {
+      once: true,
+    });
+    imageElement.addEventListener("error", onError, {
+      once: true,
+    });
+    imageElement.src = src;
+  });
+}
+
 async function syncPreviewVideoFrame(videoElement, item, currentTimeMs) {
   const previewUrl = item.previewUrl || getMediaPreviewUrl(item.filePath);
 
@@ -866,17 +911,33 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
   if (activeItem.mediaType === "image" && activeItem.previewUrl) {
     videoElement.pause();
     videoElement.hidden = true;
-    fallbackElement.hidden = true;
-    fallbackLabelElement.textContent = "Preview unavailable";
-    imageElement.hidden = false;
-    imageElement.onerror = () => {
+    fallbackElement.hidden = false;
+    fallbackLabelElement.textContent = "Loading image preview...";
+    imageElement.hidden = true;
+
+    try {
+      if (
+        imageElement.dataset.mediaItemId !== activeItem.id ||
+        imageElement.src !== activeItem.previewUrl ||
+        !imageElement.complete ||
+        imageElement.naturalWidth === 0
+      ) {
+        imageElement.dataset.mediaItemId = activeItem.id;
+        await waitForImageLoad(imageElement, activeItem.previewUrl);
+      }
+
+      if (requestToken !== mediaLibraryState.previewRequestToken) {
+        return;
+      }
+
+      fallbackElement.hidden = true;
+      imageElement.hidden = false;
+      await waitForAnimationFrame();
+    } catch (error) {
       imageElement.hidden = true;
       fallbackElement.hidden = false;
-      fallbackLabelElement.textContent = "Image preview unavailable";
-    };
-
-    if (imageElement.src !== activeItem.previewUrl) {
-      imageElement.src = activeItem.previewUrl;
+      fallbackLabelElement.textContent =
+        error instanceof Error ? error.message : "Image preview unavailable";
     }
   } else if (activeItem.mediaType === "video" && getMediaDurationMs(activeItem) > 0) {
     imageElement.hidden = true;
@@ -2326,6 +2387,20 @@ function updateMediaLibraryUi() {
   for (const item of mediaLibraryState.items) {
     const listItem = document.createElement("li");
     listItem.className = "media-library-item";
+    const thumbnail = document.createElement(
+      item.mediaType === "image" && item.previewUrl ? "img" : "div",
+    );
+    thumbnail.className = "media-library-thumbnail";
+    if (thumbnail instanceof HTMLImageElement) {
+      thumbnail.alt = `Thumbnail for ${item.fileName}`;
+      thumbnail.loading = "lazy";
+      thumbnail.decoding = "async";
+      thumbnail.src = item.previewUrl;
+    } else {
+      thumbnail.textContent = item.mediaType === "video" ? "VIDEO" : "PHOTO";
+    }
+    const content = document.createElement("div");
+    content.className = "media-library-content";
 
     const name = document.createElement("p");
     name.className = "media-library-name";
@@ -2359,7 +2434,7 @@ function updateMediaLibraryUi() {
     alignmentDetails.className = "media-library-meta";
     alignmentDetails.textContent = formatMediaAlignmentDetails(item);
 
-    listItem.append(
+    content.append(
       name,
       meta,
       status,
@@ -2367,6 +2442,7 @@ function updateMediaLibraryUi() {
       alignmentStatus,
       alignmentDetails,
     );
+    listItem.append(thumbnail, content);
     mediaLibraryList.append(listItem);
   }
 }
