@@ -48,7 +48,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-68 |v1  | Media | Insert aligned media into the generated video with a simple animation | Turns imported photos/videos into visible output instead of metadata-only timeline items | Implemented |
 | F-23 |v2  | Overlay | Display metrics from the activity file (speed, time, distance, heart rate when available) | Required by the spec | Implemented |
 | F-24 |v2  | Overlay | Support text and graphical overlays (for example speedometer, stat chips, elevation, BPM) | Required by the spec | Implemented |
-| F-25 |v2  | Overlay | Let users enable/disable each overlay independently | Needed for export customization | Not implemented |
+| F-25 |v2  | Overlay | Let users enable/disable each overlay independently | Needed for export customization | Implemented |
 | F-26 |v2  | Overlay | Add overlay positioning and style presets | Needed to avoid one fixed layout | Not implemented |
 | F-27 |v3  | Export | Expand export settings beyond current basics: output bitrate/quality profile | Improves control over file size and quality | Partial |
 | F-28 |v2  | Export | Let users choose aspect preset explicitly as landscape / square / portrait | Required by the spec, partly covered today by resolution presets | Partial |

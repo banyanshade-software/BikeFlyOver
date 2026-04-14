@@ -122,6 +122,26 @@
               </div>
             </dl>
           </section>
+          <section class="controls-panel" aria-label="Overlay controls">
+            <h2>Overlays</h2>
+            <div class="field-stack">
+              <label class="checkbox-group" for="overlayMetricCardCheckbox">
+                <input id="overlayMetricCardCheckbox" type="checkbox" checked />
+                <span>Show grouped activity metric card</span>
+              </label>
+              <label class="checkbox-group" for="overlayMetricChipsCheckbox">
+                <input id="overlayMetricChipsCheckbox" type="checkbox" checked />
+                <span>Show compact metric chips</span>
+              </label>
+              <label class="checkbox-group" for="overlaySpeedGaugeCheckbox">
+                <input id="overlaySpeedGaugeCheckbox" type="checkbox" checked />
+                <span>Show graphical speed gauge</span>
+              </label>
+            </div>
+            <p class="helper-text">
+              Preview and exported video use the same overlay visibility choices.
+            </p>
+          </section>
           <section class="controls-panel" aria-label="Media library">
             <h2>Media library</h2>
             <div class="button-row">
@@ -261,8 +281,11 @@
         <section class="viewer-panel" aria-label="Cesium viewer">
           <div id="cesiumContainer" class="viewer-canvas"></div>
           <aside id="metricOverlay" class="metric-overlay" aria-live="polite">
-            <section class="metric-overlay__column metric-overlay__column--primary">
-              <article class="metric-card">
+            <section
+              id="metricOverlayPrimaryColumn"
+              class="metric-overlay__column metric-overlay__column--primary"
+            >
+              <article id="metricOverlayMetricCard" class="metric-card">
                 <p class="metric-card__title">Activity metrics</p>
                 <dl class="metric-card__grid">
                   <div>
@@ -283,7 +306,7 @@
                   </div>
                 </dl>
               </article>
-              <div class="metric-chip-row">
+              <div id="metricOverlayMetricChips" class="metric-chip-row">
                 <div class="metric-chip">
                   <span class="metric-chip__label">Speed</span>
                   <span id="metricOverlaySpeedChip" class="metric-chip__value">N/A</span>
@@ -294,8 +317,15 @@
                 </div>
               </div>
             </section>
-            <section class="metric-overlay__column metric-overlay__column--secondary">
-              <article class="metric-gauge-card" aria-label="Speed gauge">
+            <section
+              id="metricOverlaySecondaryColumn"
+              class="metric-overlay__column metric-overlay__column--secondary"
+            >
+              <article
+                id="metricOverlaySpeedGaugeCard"
+                class="metric-gauge-card"
+                aria-label="Speed gauge"
+              >
                 <div class="metric-gauge-card__header">
                   <span class="metric-chip__label">Speed</span>
                   <span id="metricOverlaySpeed" class="metric-gauge-card__value">N/A</span>

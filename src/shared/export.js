@@ -62,6 +62,11 @@ const EXPORT_TIMING_MODES = [
   { id: "proportional", label: "Proportional track time" },
   { id: "fixed-speed", label: "Fixed route speed" },
 ];
+const OVERLAY_VISIBILITY_DEFAULTS = {
+  metricCard: true,
+  metricChips: true,
+  speedGauge: true,
+};
 
 const EXPORT_DEFAULTS = {
   resolutionId: EXPORT_RESOLUTION_PRESETS[0].id,
@@ -79,6 +84,7 @@ const EXPORT_DEFAULTS = {
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
   enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
   exitDurationMs: MEDIA_PRESENTATION_DEFAULTS.exitDurationMs,
+  overlayVisibility: OVERLAY_VISIBILITY_DEFAULTS,
 };
 
 function getResolutionPresetById(resolutionId) {
@@ -113,6 +119,16 @@ function normalizePositiveNumber(value, fieldName) {
   }
 
   return parsed;
+}
+
+function normalizeOverlayVisibilitySettings(rawVisibility = {}) {
+  return Object.keys(OVERLAY_VISIBILITY_DEFAULTS).reduce((visibility, key) => {
+    visibility[key] =
+      typeof rawVisibility?.[key] === "boolean"
+        ? rawVisibility[key]
+        : OVERLAY_VISIBILITY_DEFAULTS[key];
+    return visibility;
+  }, {});
 }
 
 function normalizeExportSettings(rawSettings = {}) {
@@ -176,6 +192,9 @@ function normalizeExportSettings(rawSettings = {}) {
     settleTimeoutMs,
     settleStablePasses,
     maxFrameRetries,
+    overlayVisibility: normalizeOverlayVisibilitySettings(
+      rawSettings.overlayVisibility,
+    ),
     ...normalizeMediaPresentationSettings(rawSettings),
   };
 }

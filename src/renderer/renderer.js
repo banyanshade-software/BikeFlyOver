@@ -15,6 +15,11 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     photoKenBurnsEnabled: true,
     enterDurationMs: 500,
     exitDurationMs: 700,
+    overlayVisibility: {
+      metricCard: true,
+      metricChips: true,
+      speedGauge: true,
+    },
   },
   resolutionPresets: [],
   cameraModes: [],
@@ -45,6 +50,28 @@ const mediaLibraryState = {
 };
 const TIMELINE_SLIDER_MAX = 1000;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
+const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze({
+  metricCard: true,
+  metricChips: true,
+  speedGauge: true,
+});
+const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
+  {
+    key: "metricCard",
+    checkboxId: "overlayMetricCardCheckbox",
+    elementId: "metricOverlayMetricCard",
+  },
+  {
+    key: "metricChips",
+    checkboxId: "overlayMetricChipsCheckbox",
+    elementId: "metricOverlayMetricChips",
+  },
+  {
+    key: "speedGauge",
+    checkboxId: "overlaySpeedGaugeCheckbox",
+    elementId: "metricOverlaySpeedGaugeCard",
+  },
+]);
 const TIMELINE_SCRUB_KEYS = new Set([
   "ArrowLeft",
   "ArrowRight",
@@ -115,6 +142,53 @@ function setElementHidden(elementId, hidden) {
   if (element instanceof HTMLElement) {
     element.hidden = hidden;
   }
+}
+
+function normalizeOverlayVisibilityState(rawVisibility = {}) {
+  return OVERLAY_COMPONENT_DEFINITIONS.reduce((visibility, component) => {
+    const fallback =
+      EXPORT_OPTIONS.defaults?.overlayVisibility?.[component.key] ??
+      OVERLAY_VISIBILITY_DEFAULTS[component.key];
+    visibility[component.key] =
+      typeof rawVisibility?.[component.key] === "boolean"
+        ? rawVisibility[component.key]
+        : fallback;
+    return visibility;
+  }, {});
+}
+
+function syncOverlayControls(playbackState) {
+  const overlayVisibility = normalizeOverlayVisibilityState(
+    playbackState.ui.overlayVisibility,
+  );
+
+  playbackState.ui.overlayVisibility = overlayVisibility;
+
+  for (const component of OVERLAY_COMPONENT_DEFINITIONS) {
+    const checkbox = document.getElementById(component.checkboxId);
+
+    if (checkbox instanceof HTMLInputElement) {
+      checkbox.checked = overlayVisibility[component.key];
+    }
+  }
+}
+
+function applyOverlayVisibility(playbackState) {
+  const overlayVisibility = normalizeOverlayVisibilityState(
+    playbackState.ui.overlayVisibility,
+  );
+  const primaryVisible = overlayVisibility.metricCard || overlayVisibility.metricChips;
+  const secondaryVisible = overlayVisibility.speedGauge;
+
+  playbackState.ui.overlayVisibility = overlayVisibility;
+
+  for (const component of OVERLAY_COMPONENT_DEFINITIONS) {
+    setElementHidden(component.elementId, !overlayVisibility[component.key]);
+  }
+
+  setElementHidden("metricOverlayPrimaryColumn", !primaryVisible);
+  setElementHidden("metricOverlaySecondaryColumn", !secondaryVisible);
+  setElementHidden("metricOverlay", !(primaryVisible || secondaryVisible));
 }
 
 function setProgressState(elementIds, state) {
@@ -1086,6 +1160,9 @@ function createPlaybackState(trackpoints, options = {}) {
     ui: {
       isTimelineInteracting: false,
       resumePlaybackAfterTimelineInteraction: false,
+      overlayVisibility: normalizeOverlayVisibilityState(
+        options.overlayVisibility ?? EXPORT_OPTIONS.defaults.overlayVisibility,
+      ),
     },
   };
 }
@@ -2332,6 +2409,29 @@ function setupPlaybackControls(viewer, playbackState) {
   }
 }
 
+function setupOverlayControls(playbackState) {
+  syncOverlayControls(playbackState);
+  applyOverlayVisibility(playbackState);
+
+  for (const component of OVERLAY_COMPONENT_DEFINITIONS) {
+    const checkbox = document.getElementById(component.checkboxId);
+
+    checkbox?.addEventListener("change", (event) => {
+      const target = event.currentTarget;
+
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      playbackState.ui.overlayVisibility = {
+        ...normalizeOverlayVisibilityState(playbackState.ui.overlayVisibility),
+        [component.key]: target.checked,
+      };
+      applyOverlayVisibility(playbackState);
+    });
+  }
+}
+
 function populateSelect(selectElement, items, selectedId) {
   if (!(selectElement instanceof HTMLSelectElement)) {
     return;
@@ -2663,6 +2763,9 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayMetricCardCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayMetricChipsCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlaySpeedGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled(
     "importMediaButton",
     exportUiState.isExporting || mediaLibraryState.isImporting,
@@ -2706,6 +2809,9 @@ function readExportSettings() {
         ? cameraModeSelect.value
         : EXPORT_OPTIONS.defaults.cameraMode,
     mediaItems: mediaLibraryState.items,
+    overlayVisibility: normalizeOverlayVisibilityState(
+      window.playbackState?.ui?.overlayVisibility,
+    ),
     photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
     photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
   };
@@ -2792,6 +2898,9 @@ function createPreviewSnapshot(playbackState) {
     cameraMode: playbackState.camera.mode,
     currentTimestamp: playbackState.currentTimestamp,
     isPlaying: playbackState.isPlaying,
+    overlayVisibility: normalizeOverlayVisibilityState(
+      playbackState.ui.overlayVisibility,
+    ),
     speedMultiplier: playbackState.speedMultiplier,
   };
 }
@@ -2805,8 +2914,13 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   playbackState.speedMultiplier = previewSnapshot.speedMultiplier;
   playbackState.camera.mode = previewSnapshot.cameraMode;
   playbackState.camera.adaptiveStrength = previewSnapshot.adaptiveStrength;
+  playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
+    previewSnapshot.overlayVisibility,
+  );
   playbackState.isPlaying = false;
   resetFollowCameraSmoothing(playbackState);
+  syncOverlayControls(playbackState);
+  applyOverlayVisibility(playbackState);
   setPlaybackTimestamp(viewer, playbackState, previewSnapshot.currentTimestamp);
 
   if (previewSnapshot.isPlaying) {
@@ -2892,6 +3006,10 @@ async function renderExportFrame(viewer, playbackState, payload) {
   playbackState.speedMultiplier = payload.settings.speedMultiplier;
   playbackState.camera.mode = payload.settings.cameraMode;
   playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
+  playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
+    payload.settings.overlayVisibility,
+  );
+  applyOverlayVisibility(playbackState);
   setPlaybackTimestamp(viewer, playbackState, payload.activityTimestamp, {
     updateMediaPreview: false,
     updateUi: false,
@@ -2932,6 +3050,11 @@ function setupExportRenderBridge(viewer, playbackState) {
     playbackState.speedMultiplier = payload.settings.speedMultiplier;
     playbackState.camera.mode = payload.settings.cameraMode;
     playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
+    playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
+      payload.settings.overlayVisibility,
+    );
+    syncOverlayControls(playbackState);
+    applyOverlayVisibility(playbackState);
     resetFollowCameraSmoothing(playbackState);
     setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
       updateMediaPreview: false,
@@ -3031,6 +3154,7 @@ async function initializeApp() {
       setupExportRenderBridge(viewer, playbackState);
       setupMediaLibraryControls(viewer, sampleTrack);
       setupPlaybackControls(viewer, playbackState);
+      setupOverlayControls(playbackState);
       setupExportControls();
       startPlayback(viewer, playbackState);
       setRouteStatus(
