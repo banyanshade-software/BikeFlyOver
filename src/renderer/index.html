@@ -137,6 +137,10 @@
                 <input id="overlaySpeedGaugeCheckbox" type="checkbox" checked />
                 <span>Show graphical speed gauge</span>
               </label>
+              <label class="checkbox-group" for="overlayHeartRateGaugeCheckbox">
+                <input id="overlayHeartRateGaugeCheckbox" type="checkbox" checked />
+                <span>Show heart rate gauge</span>
+              </label>
             </div>
             <p class="helper-text">
               Preview and exported video use the same overlay visibility choices.
@@ -300,10 +304,6 @@
                     <dt>Altitude</dt>
                     <dd id="metricOverlayAltitude">N/A</dd>
                   </div>
-                  <div id="metricOverlayHeartRateCardItem" hidden>
-                    <dt>Heart rate</dt>
-                    <dd id="metricOverlayHeartRate">N/A</dd>
-                  </div>
                 </dl>
               </article>
               <div id="metricOverlayMetricChips" class="metric-chip-row">
@@ -340,6 +340,27 @@
                 <p id="metricOverlaySpeedGaugeMeta" class="metric-gauge-card__meta">
                   0% of current ride peak
                 </p>
+              </article>
+              <article
+                id="metricOverlayHeartRateGaugeCard"
+                class="metric-gauge-card"
+                aria-label="Heart rate gauge"
+                hidden
+              >
+                <div class="metric-gauge-card__header">
+                  <span class="metric-chip__label">Heart rate</span>
+                  <span
+                    id="metricOverlayHeartRate"
+                    class="metric-gauge-card__value"
+                  >N/A</span>
+                </div>
+                <div class="metric-gauge">
+                  <div
+                    id="metricOverlayHeartRateGaugeFill"
+                    class="metric-gauge__fill metric-gauge__fill--heart-green"
+                    style="width: 0%;"
+                  ></div>
+                </div>
               </article>
             </section>
           </aside>

@@ -66,6 +66,7 @@ const OVERLAY_VISIBILITY_DEFAULTS = {
   metricCard: true,
   metricChips: true,
   speedGauge: true,
+  heartRateGauge: true,
 };
 
 const EXPORT_DEFAULTS = {

@@ -536,6 +536,22 @@ body {
   background: linear-gradient(90deg, #4ca8ff, #79bdff);
 }
 
+.metric-gauge__fill--heart-green {
+  background: linear-gradient(90deg, #4bd66f, #7ef0a3);
+}
+
+.metric-gauge__fill--heart-yellow {
+  background: linear-gradient(90deg, #d8c94a, #f5e87c);
+}
+
+.metric-gauge__fill--heart-orange {
+  background: linear-gradient(90deg, #ff9a3d, #ffc06e);
+}
+
+.metric-gauge__fill--heart-red {
+  background: linear-gradient(90deg, #ff6b5f, #ff968d);
+}
+
 .metric-gauge-card__meta {
   margin: 0;
   font-size: 0.82rem;

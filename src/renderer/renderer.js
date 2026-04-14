@@ -19,6 +19,7 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
       metricCard: true,
       metricChips: true,
       speedGauge: true,
+      heartRateGauge: true,
     },
   },
   resolutionPresets: [],
@@ -54,6 +55,7 @@ const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze({
   metricCard: true,
   metricChips: true,
   speedGauge: true,
+  heartRateGauge: true,
 });
 const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
   {
@@ -70,6 +72,11 @@ const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
     key: "speedGauge",
     checkboxId: "overlaySpeedGaugeCheckbox",
     elementId: "metricOverlaySpeedGaugeCard",
+  },
+  {
+    key: "heartRateGauge",
+    checkboxId: "overlayHeartRateGaugeCheckbox",
+    elementId: "metricOverlayHeartRateGaugeCard",
   },
 ]);
 const TIMELINE_SCRUB_KEYS = new Set([
@@ -177,13 +184,29 @@ function applyOverlayVisibility(playbackState) {
   const overlayVisibility = normalizeOverlayVisibilityState(
     playbackState.ui.overlayVisibility,
   );
+  const heartRateGaugeCard = document.getElementById("metricOverlayHeartRateGaugeCard");
+  const heartRateGaugeAvailable =
+    heartRateGaugeCard instanceof HTMLElement
+      ? heartRateGaugeCard.dataset.available === "true"
+      : false;
   const primaryVisible = overlayVisibility.metricCard || overlayVisibility.metricChips;
-  const secondaryVisible = overlayVisibility.speedGauge;
+  const secondaryVisible =
+    overlayVisibility.speedGauge ||
+    (overlayVisibility.heartRateGauge && heartRateGaugeAvailable);
 
   playbackState.ui.overlayVisibility = overlayVisibility;
 
   for (const component of OVERLAY_COMPONENT_DEFINITIONS) {
+    if (component.key === "heartRateGauge") {
+      continue;
+    }
+
     setElementHidden(component.elementId, !overlayVisibility[component.key]);
+  }
+
+  if (heartRateGaugeCard instanceof HTMLElement) {
+    heartRateGaugeCard.hidden =
+      !overlayVisibility.heartRateGauge || !heartRateGaugeAvailable;
   }
 
   setElementHidden("metricOverlayPrimaryColumn", !primaryVisible);
@@ -294,6 +317,45 @@ function formatAltitudeValue(altitudeMeters) {
   }
 
   return `${Math.round(altitudeMeters)} m`;
+}
+
+function getHeartRateGaugeState(heartRate) {
+  const ratio = Number.isFinite(heartRate)
+    ? Math.min(1, Math.max(0, heartRate / 180))
+    : 0;
+
+  if (!Number.isFinite(heartRate)) {
+    return {
+      fillClass: "metric-gauge__fill--heart-green",
+      ratio,
+    };
+  }
+
+  if (heartRate < 120) {
+    return {
+      fillClass: "metric-gauge__fill--heart-green",
+      ratio,
+    };
+  }
+
+  if (heartRate < 140) {
+    return {
+      fillClass: "metric-gauge__fill--heart-yellow",
+      ratio,
+    };
+  }
+
+  if (heartRate < 150) {
+    return {
+      fillClass: "metric-gauge__fill--heart-orange",
+      ratio,
+    };
+  }
+
+  return {
+    fillClass: "metric-gauge__fill--heart-red",
+    ratio,
+  };
 }
 
 function clampProgressRatio(progressRatio) {
@@ -2123,11 +2185,14 @@ function updatePlaybackUI(playbackState) {
 }
 
 function updateMetricOverlay(playbackState) {
-  const heartRateCardItem = document.getElementById("metricOverlayHeartRateCardItem");
   const speedGaugeFill = document.getElementById("metricOverlaySpeedGaugeFill");
+  const heartRateGaugeCard = document.getElementById("metricOverlayHeartRateGaugeCard");
+  const heartRateGaugeFill = document.getElementById("metricOverlayHeartRateGaugeFill");
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
   const progressRatio = getPlaybackProgressRatio(playbackState);
   const speedMetersPerSecond = playbackState.currentSample.speed;
+  const heartRate = playbackState.currentSample.heartRate;
+  const heartRateGaugeState = getHeartRateGaugeState(heartRate);
   const trackPeakSpeed = playbackState.trackPeakSpeed || 0;
   const speedGaugeRatio =
     Number.isFinite(speedMetersPerSecond) && trackPeakSpeed > 0
@@ -2163,20 +2228,23 @@ function updateMetricOverlay(playbackState) {
     speedGaugeFill.style.width = `${Math.round(speedGaugeRatio * 100)}%`;
   }
 
-  if (!(heartRateCardItem instanceof HTMLElement)) {
-    return;
-  }
-
-  if (Number.isFinite(playbackState.currentSample.heartRate)) {
-    setTextContent(
-      "metricOverlayHeartRate",
-      formatHeartRate(playbackState.currentSample.heartRate),
+  if (heartRateGaugeFill instanceof HTMLElement) {
+    heartRateGaugeFill.classList.remove(
+      "metric-gauge__fill--heart-green",
+      "metric-gauge__fill--heart-yellow",
+      "metric-gauge__fill--heart-orange",
+      "metric-gauge__fill--heart-red",
     );
-    heartRateCardItem.hidden = false;
-    return;
+    heartRateGaugeFill.classList.add(heartRateGaugeState.fillClass);
+    heartRateGaugeFill.style.width = `${Math.round(heartRateGaugeState.ratio * 100)}%`;
   }
 
-  heartRateCardItem.hidden = true;
+  if (heartRateGaugeCard instanceof HTMLElement) {
+    heartRateGaugeCard.dataset.available = Number.isFinite(heartRate) ? "true" : "false";
+  }
+
+  setTextContent("metricOverlayHeartRate", formatHeartRate(heartRate));
+  applyOverlayVisibility(playbackState);
 }
 
 function syncPlaybackState(viewer, playbackState, options = {}) {
@@ -2766,6 +2834,7 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("overlayMetricCardCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayMetricChipsCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayHeartRateGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled(
     "importMediaButton",
     exportUiState.isExporting || mediaLibraryState.isImporting,
