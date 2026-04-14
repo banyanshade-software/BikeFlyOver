@@ -442,9 +442,18 @@ body {
 .media-preview-image,
 .media-preview-video {
   display: block;
-  object-fit: cover;
   background: rgba(12, 31, 48, 0.92);
   transform-origin: center center;
+}
+
+.media-preview-image {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.media-preview-video {
+  object-fit: cover;
 }
 
 .media-preview-fallback {

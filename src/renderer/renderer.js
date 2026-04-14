@@ -690,10 +690,11 @@ function hideMediaPreviewOverlay() {
     overlayElement.hidden = true;
   }
 
-  if (imageElement instanceof HTMLImageElement) {
+  if (imageElement instanceof HTMLDivElement) {
     imageElement.hidden = true;
-    imageElement.removeAttribute("src");
+    imageElement.style.backgroundImage = "";
     imageElement.style.transform = "";
+    delete imageElement.dataset.previewUrl;
   }
 
   if (videoElement instanceof HTMLVideoElement) {
@@ -750,8 +751,9 @@ function waitForMediaElementEvent(target, eventName, timeoutMs = 4000) {
   });
 }
 
-function waitForImageLoad(imageElement, src, timeoutMs = 4000) {
+function preloadImageSource(src, timeoutMs = 4000) {
   return new Promise((resolve, reject) => {
+    const imageProbe = new Image();
     let settled = false;
 
     const cleanup = () => {
@@ -761,8 +763,8 @@ function waitForImageLoad(imageElement, src, timeoutMs = 4000) {
 
       settled = true;
       window.clearTimeout(timeoutId);
-      imageElement.removeEventListener("load", onLoad);
-      imageElement.removeEventListener("error", onError);
+      imageProbe.removeEventListener("load", onLoad);
+      imageProbe.removeEventListener("error", onError);
     };
 
     const onLoad = () => {
@@ -778,13 +780,14 @@ function waitForImageLoad(imageElement, src, timeoutMs = 4000) {
       reject(new Error("Timed out waiting for image preview."));
     }, timeoutMs);
 
-    imageElement.addEventListener("load", onLoad, {
+    imageProbe.addEventListener("load", onLoad, {
       once: true,
     });
-    imageElement.addEventListener("error", onError, {
+    imageProbe.addEventListener("error", onError, {
       once: true,
     });
-    imageElement.src = src;
+    imageProbe.decoding = "async";
+    imageProbe.src = src;
   });
 }
 
@@ -838,7 +841,7 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
   if (
     !(overlayElement instanceof HTMLElement) ||
     !(cardElement instanceof HTMLElement) ||
-    !(imageElement instanceof HTMLImageElement) ||
+    !(imageElement instanceof HTMLDivElement) ||
     !(videoElement instanceof HTMLVideoElement) ||
     !(fallbackElement instanceof HTMLDivElement) ||
     !(fallbackLabelElement instanceof HTMLElement)
@@ -905,8 +908,6 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
   }
 
   mediaLibraryState.activePreviewItemId = activeItem.id;
-  imageElement.alt = `${formatMediaType(activeItem.mediaType)} preview for ${activeItem.fileName}`;
-  imageElement.onerror = null;
 
   if (activeItem.mediaType === "image" && activeItem.previewUrl) {
     videoElement.pause();
@@ -918,12 +919,12 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
     try {
       if (
         imageElement.dataset.mediaItemId !== activeItem.id ||
-        imageElement.src !== activeItem.previewUrl ||
-        !imageElement.complete ||
-        imageElement.naturalWidth === 0
+        imageElement.dataset.previewUrl !== activeItem.previewUrl
       ) {
         imageElement.dataset.mediaItemId = activeItem.id;
-        await waitForImageLoad(imageElement, activeItem.previewUrl);
+        await preloadImageSource(activeItem.previewUrl);
+        imageElement.dataset.previewUrl = activeItem.previewUrl;
+        imageElement.style.backgroundImage = `url("${activeItem.previewUrl}")`;
       }
 
       if (requestToken !== mediaLibraryState.previewRequestToken) {
@@ -941,7 +942,8 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
     }
   } else if (activeItem.mediaType === "video" && getMediaDurationMs(activeItem) > 0) {
     imageElement.hidden = true;
-    imageElement.removeAttribute("src");
+    imageElement.style.backgroundImage = "";
+    delete imageElement.dataset.previewUrl;
     fallbackElement.hidden = true;
     videoElement.hidden = false;
 
@@ -963,7 +965,8 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
     }
   } else {
     imageElement.hidden = true;
-    imageElement.removeAttribute("src");
+    imageElement.style.backgroundImage = "";
+    delete imageElement.dataset.previewUrl;
     videoElement.pause();
     videoElement.hidden = true;
     fallbackElement.hidden = false;
