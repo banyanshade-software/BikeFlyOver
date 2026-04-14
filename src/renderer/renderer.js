@@ -2796,11 +2796,10 @@ async function renderExportFrame(viewer, playbackState, payload) {
   playbackState.speedMultiplier = payload.settings.speedMultiplier;
   playbackState.camera.mode = payload.settings.cameraMode;
   playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
-  resetFollowCameraSmoothing(playbackState);
   setPlaybackTimestamp(viewer, playbackState, payload.activityTimestamp, {
     updateMediaPreview: false,
     updateUi: false,
-    deterministicCamera: true,
+    deterministicCamera: false,
   });
   await updateMediaPreviewOverlay(playbackState, {
     awaitVideoFrame: true,
@@ -2841,7 +2840,7 @@ function setupExportRenderBridge(viewer, playbackState) {
     setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
       updateMediaPreview: false,
       updateUi: false,
-      deterministicCamera: true,
+      deterministicCamera: false,
     });
     hideMediaPreviewOverlay();
 
