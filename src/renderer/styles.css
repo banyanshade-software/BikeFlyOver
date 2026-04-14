@@ -16,6 +16,10 @@ body {
   overflow: hidden;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 .export-mode,
 .export-mode body,
 .export-session-active,
