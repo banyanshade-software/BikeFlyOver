@@ -2,11 +2,17 @@ const { pathToFileURL } = require("node:url");
 const { contextBridge, ipcRenderer } = require("electron");
 const { loadSampleTrack } = require("../shared/sample-track");
 const {
+  CAMERA_SETTINGS_FIELDS,
   EXPORT_CAMERA_MODES,
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
+  EXPORT_SETTINGS_FIELDS,
   EXPORT_TIMING_MODES,
 } = require("../shared/export");
+const {
+  MEDIA_PRESENTATION_SETTINGS_FIELDS,
+  OVERLAY_VISIBILITY_FIELDS,
+} = require("../shared/parameter-config");
 
 function subscribe(channel, listener) {
   const wrappedListener = (_event, payload) => {
@@ -25,6 +31,12 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
   getExportOptions() {
     return {
       defaults: EXPORT_DEFAULTS,
+      parameterConfig: {
+        cameraSettings: CAMERA_SETTINGS_FIELDS,
+        exportSettings: EXPORT_SETTINGS_FIELDS,
+        mediaPresentation: MEDIA_PRESENTATION_SETTINGS_FIELDS,
+        overlayVisibility: OVERLAY_VISIBILITY_FIELDS,
+      },
       resolutionPresets: EXPORT_RESOLUTION_PRESETS,
       cameraModes: EXPORT_CAMERA_MODES,
       timingModes: EXPORT_TIMING_MODES,

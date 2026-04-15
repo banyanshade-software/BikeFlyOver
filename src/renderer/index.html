@@ -124,41 +124,35 @@
             <div class="field-stack">
               <label class="field-group" for="cameraFollowDistanceInput">
                 <span class="field-label">Follow distance (m)</span>
-                <input id="cameraFollowDistanceInput" type="number" min="80" max="800" step="5" />
+                <input id="cameraFollowDistanceInput" type="number" />
               </label>
               <label class="field-group" for="cameraFollowAltitudeInput">
                 <span class="field-label">Follow altitude offset (m)</span>
-                <input id="cameraFollowAltitudeInput" type="number" min="2" max="120" step="1" />
+                <input id="cameraFollowAltitudeInput" type="number" />
               </label>
               <label class="field-group" for="cameraFollowPitchInput">
                 <span class="field-label">Follow pitch (deg)</span>
-                <input id="cameraFollowPitchInput" type="number" min="15" max="85" step="1" />
+                <input id="cameraFollowPitchInput" type="number" />
               </label>
               <label class="field-group" for="cameraLookAheadDistanceInput">
                 <span class="field-label">Look-ahead distance (m)</span>
-                <input id="cameraLookAheadDistanceInput" type="number" min="10" max="200" step="1" />
+                <input id="cameraLookAheadDistanceInput" type="number" />
               </label>
               <label class="field-group" for="cameraLookAheadWindowInput">
                 <span class="field-label">Look-ahead window (points)</span>
-                <input id="cameraLookAheadWindowInput" type="number" min="2" max="60" step="1" />
+                <input id="cameraLookAheadWindowInput" type="number" />
               </label>
               <label class="field-group" for="cameraSmoothingStrengthInput">
                 <span class="field-label">Smoothing strength</span>
-                <input id="cameraSmoothingStrengthInput" type="number" min="0.25" max="3" step="0.05" />
+                <input id="cameraSmoothingStrengthInput" type="number" />
               </label>
               <label class="field-group" for="cameraOverviewPitchInput">
                 <span class="field-label">Overview pitch (deg)</span>
-                <input id="cameraOverviewPitchInput" type="number" min="20" max="85" step="1" />
+                <input id="cameraOverviewPitchInput" type="number" />
               </label>
               <label class="field-group" for="cameraOverviewRangeMultiplierInput">
                 <span class="field-label">Overview range multiplier</span>
-                <input
-                  id="cameraOverviewRangeMultiplierInput"
-                  type="number"
-                  min="1"
-                  max="6"
-                  step="0.1"
-                />
+                <input id="cameraOverviewRangeMultiplierInput" type="number" />
               </label>
             </div>
             <p class="helper-text">
@@ -169,42 +163,36 @@
             <h2>Overlays</h2>
             <div class="field-stack">
               <label class="checkbox-group" for="overlayTimeMetricCheckbox">
-                <input id="overlayTimeMetricCheckbox" type="checkbox" checked />
+                <input id="overlayTimeMetricCheckbox" type="checkbox" />
                 <span>Show time metric</span>
               </label>
               <label class="checkbox-group" for="overlayDistanceMetricCheckbox">
-                <input id="overlayDistanceMetricCheckbox" type="checkbox" checked />
+                <input id="overlayDistanceMetricCheckbox" type="checkbox" />
                 <span>Show distance metric</span>
               </label>
               <label class="checkbox-group" for="overlayAltitudeMetricCheckbox">
-                <input id="overlayAltitudeMetricCheckbox" type="checkbox" checked />
+                <input id="overlayAltitudeMetricCheckbox" type="checkbox" />
                 <span>Show altitude metric</span>
               </label>
               <label class="checkbox-group" for="overlayCadenceMetricCheckbox">
-                <input id="overlayCadenceMetricCheckbox" type="checkbox" checked />
+                <input id="overlayCadenceMetricCheckbox" type="checkbox" />
                 <span>Show cadence metric</span>
               </label>
               <label class="checkbox-group" for="overlayTemperatureMetricCheckbox">
-                <input id="overlayTemperatureMetricCheckbox" type="checkbox" checked />
+                <input id="overlayTemperatureMetricCheckbox" type="checkbox" />
                 <span>Show temperature metric</span>
               </label>
               <label class="checkbox-group" for="overlaySpeedGaugeCheckbox">
-                <input id="overlaySpeedGaugeCheckbox" type="checkbox" checked />
+                <input id="overlaySpeedGaugeCheckbox" type="checkbox" />
                 <span>Show graphical speed gauge</span>
               </label>
               <label class="checkbox-group" for="overlayHeartRateGaugeCheckbox">
-                <input id="overlayHeartRateGaugeCheckbox" type="checkbox" checked />
+                <input id="overlayHeartRateGaugeCheckbox" type="checkbox" />
                 <span>Show heart rate gauge</span>
               </label>
               <label class="field-group" for="overlaySpeedGaugeMaxInput">
                 <span class="field-label">Speedometer max speed (km/h)</span>
-                <input
-                  id="overlaySpeedGaugeMaxInput"
-                  type="number"
-                  min="10"
-                  step="5"
-                  value="40"
-                />
+                <input id="overlaySpeedGaugeMaxInput" type="number" />
               </label>
             </div>
             <p class="helper-text">
@@ -241,20 +229,10 @@
             <div class="field-stack media-settings-stack">
               <label class="field-group">
                 <span class="field-label">Photo export hold</span>
-                <input
-                  id="photoDisplayDurationInput"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value="5"
-                />
+                <input id="photoDisplayDurationInput" type="number" />
               </label>
               <label class="checkbox-group" for="photoKenBurnsCheckbox">
-                <input
-                  id="photoKenBurnsCheckbox"
-                  type="checkbox"
-                  checked
-                />
+                <input id="photoKenBurnsCheckbox" type="checkbox" />
                 <span>Enable subtle Ken Burns effect on exported photos</span>
               </label>
             </div>
@@ -275,34 +253,15 @@
               </label>
               <label class="field-group">
                 <span class="field-label">FPS</span>
-                <input
-                  id="exportFpsInput"
-                  type="number"
-                  min="1"
-                  step="1"
-                  value="30"
-                />
+                <input id="exportFpsInput" type="number" />
               </label>
               <label id="exportSpeedGroup" class="field-group">
                 <span id="exportSpeedLabel" class="field-label">Base speed multiplier</span>
-                <input
-                  id="exportSpeedInput"
-                  type="number"
-                  min="0.1"
-                  step="0.1"
-                  value="40"
-                />
+                <input id="exportSpeedInput" type="number" />
               </label>
               <label id="exportAdaptiveStrengthGroup" class="field-group">
                 <span class="field-label">Adaptive strength</span>
-                <input
-                  id="exportAdaptiveStrengthInput"
-                  type="number"
-                  min="0.25"
-                  max="3"
-                  step="0.05"
-                  value="1"
-                />
+                <input id="exportAdaptiveStrengthInput" type="number" />
               </label>
               <label class="field-group">
                 <span class="field-label">Camera mode</span>

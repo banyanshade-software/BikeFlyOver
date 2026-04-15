@@ -1,10 +1,7 @@
-const MEDIA_PRESENTATION_DEFAULTS = {
-  photoDisplayDurationMs: 5000,
-  enterDurationMs: 500,
-  exitDurationMs: 700,
-  photoKenBurnsEnabled: true,
-  photoKenBurnsScale: 0.05,
-};
+const {
+  MEDIA_PRESENTATION_DEFAULTS,
+  MEDIA_PRESENTATION_SETTINGS_FIELDS,
+} = require("./parameter-config");
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -24,26 +21,47 @@ function normalizePositiveInteger(value, fieldName) {
   return parsed;
 }
 
+function clampToFieldDefinition(value, definition) {
+  return clamp(
+    value,
+    definition?.min ?? Number.NEGATIVE_INFINITY,
+    definition?.max ?? Number.POSITIVE_INFINITY,
+  );
+}
+
 function normalizeMediaPresentationSettings(rawSettings = {}) {
   return {
-    photoDisplayDurationMs: normalizePositiveInteger(
-      rawSettings.photoDisplayDurationMs ??
-        MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
-      "photoDisplayDurationMs",
+    photoDisplayDurationMs: clampToFieldDefinition(
+      normalizePositiveInteger(
+        rawSettings.photoDisplayDurationMs ??
+          MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
+        "photoDisplayDurationMs",
+      ),
+      MEDIA_PRESENTATION_SETTINGS_FIELDS.photoDisplayDurationMs,
     ),
-    enterDurationMs: normalizePositiveInteger(
-      rawSettings.enterDurationMs ?? MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
-      "enterDurationMs",
+    enterDurationMs: clampToFieldDefinition(
+      normalizePositiveInteger(
+        rawSettings.enterDurationMs ?? MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
+        "enterDurationMs",
+      ),
+      MEDIA_PRESENTATION_SETTINGS_FIELDS.enterDurationMs,
     ),
-    exitDurationMs: normalizePositiveInteger(
-      rawSettings.exitDurationMs ?? MEDIA_PRESENTATION_DEFAULTS.exitDurationMs,
-      "exitDurationMs",
+    exitDurationMs: clampToFieldDefinition(
+      normalizePositiveInteger(
+        rawSettings.exitDurationMs ?? MEDIA_PRESENTATION_DEFAULTS.exitDurationMs,
+        "exitDurationMs",
+      ),
+      MEDIA_PRESENTATION_SETTINGS_FIELDS.exitDurationMs,
     ),
     photoKenBurnsEnabled:
       rawSettings.photoKenBurnsEnabled === undefined
         ? MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled
         : Boolean(rawSettings.photoKenBurnsEnabled),
-    photoKenBurnsScale: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsScale,
+    photoKenBurnsScale: clamp(
+      MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsScale,
+      MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale.min ?? 0,
+      MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale.max ?? Number.POSITIVE_INFINITY,
+    ),
   };
 }
 

@@ -1,45 +1,8 @@
-const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
-  defaults: {
-    resolutionId: "landscape-720p",
-    width: 1280,
-    height: 720,
-    fps: 30,
-    timingMode: "adaptive-speed",
-    speedMultiplier: 40,
-    adaptiveStrength: 1,
-    cameraMode: "follow",
-    settleTimeoutMs: 15000,
-    settleStablePasses: 2,
-    maxFrameRetries: 1,
-    speedGaugeMaxKph: 40,
-    cameraSettings: {
-      followDistanceMeters: 260,
-      followAltitudeOffsetMeters: 18,
-      followPitchDegrees: 52,
-      lookAheadDistanceMeters: 42,
-      lookAheadPointWindow: 12,
-      smoothingStrength: 1,
-      overviewPitchDegrees: 55,
-      overviewRangeMultiplier: 2.8,
-    },
-    photoDisplayDurationMs: 5000,
-    photoKenBurnsEnabled: true,
-    enterDurationMs: 500,
-    exitDurationMs: 700,
-    overlayVisibility: {
-      timeMetric: true,
-      distanceMetric: true,
-      altitudeMetric: true,
-      cadenceMetric: true,
-      temperatureMetric: true,
-      speedGauge: true,
-      heartRateGauge: true,
-    },
-  },
-  resolutionPresets: [],
-  cameraModes: [],
-  timingModes: [],
-};
+const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.();
+const PARAMETER_CONFIG = EXPORT_OPTIONS?.parameterConfig || {};
+const CAMERA_SETTINGS_FIELDS = PARAMETER_CONFIG.cameraSettings || {};
+const EXPORT_SETTINGS_FIELDS = PARAMETER_CONFIG.exportSettings || {};
+const MEDIA_PRESENTATION_SETTINGS_FIELDS = PARAMETER_CONFIG.mediaPresentation || {};
 const RENDER_MODE =
   new URLSearchParams(window.location.search).get("mode") === "export"
     ? "export"
@@ -66,15 +29,15 @@ const mediaLibraryState = {
 };
 const TIMELINE_SLIDER_MAX = 1000;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
-const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze({
-  timeMetric: true,
-  distanceMetric: true,
-  altitudeMetric: true,
-  cadenceMetric: true,
-  temperatureMetric: true,
-  speedGauge: true,
-  heartRateGauge: true,
-});
+const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze(
+  Object.fromEntries(
+    Object.entries(PARAMETER_CONFIG.overlayVisibility || {}).map(
+      ([key, definition]) => {
+        return [key, definition.default];
+      },
+    ),
+  ),
+);
 const PRIMARY_METRIC_KEYS = Object.freeze([
   "timeMetric",
   "distanceMetric",
@@ -204,14 +167,30 @@ function normalizeOverlayVisibilityState(rawVisibility = {}) {
   }, {});
 }
 
-function normalizeSpeedGaugeMaxKph(value) {
-  const parsed = Number(value);
+function normalizeConfiguredNumber(value, definition, fallback) {
+  const parsed =
+    definition?.type === "integer" ? Number.parseInt(value, 10) : Number(value);
+  let normalized = Number.isFinite(parsed) ? parsed : fallback;
 
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? 40;
+  if (Number.isFinite(definition?.min)) {
+    normalized = Math.max(definition.min, normalized);
   }
 
-  return parsed;
+  if (Number.isFinite(definition?.max)) {
+    normalized = Math.min(definition.max, normalized);
+  }
+
+  return normalized;
+}
+
+function normalizeSpeedGaugeMaxKph(value) {
+  const definition = EXPORT_SETTINGS_FIELDS.speedGaugeMaxKph;
+
+  return normalizeConfiguredNumber(
+    value,
+    definition,
+    EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? definition?.default,
+  );
 }
 
 function clampNumber(value, minimum, maximum) {
@@ -220,80 +199,29 @@ function clampNumber(value, minimum, maximum) {
 
 function normalizeCameraSettings(rawCameraSettings = {}) {
   const defaultCameraSettings = EXPORT_OPTIONS.defaults?.cameraSettings || {};
-  const getFiniteNumber = (value, fallback) => {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
-  };
-  const getFiniteInteger = (value, fallback) => {
-    const parsed = Number.parseInt(value, 10);
-    return Number.isFinite(parsed) ? parsed : fallback;
+  const normalizeCameraSetting = (settingKey) => {
+    const definition = CAMERA_SETTINGS_FIELDS[settingKey];
+    const fallback =
+      defaultCameraSettings[settingKey] ?? definition?.default ?? Number.NaN;
+
+    return normalizeConfiguredNumber(
+      rawCameraSettings[settingKey],
+      definition,
+      fallback,
+    );
   };
 
   return {
-    followDistanceMeters: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.followDistanceMeters,
-        defaultCameraSettings.followDistanceMeters ?? 260,
-      ),
-      80,
-      800,
+    followDistanceMeters: normalizeCameraSetting("followDistanceMeters"),
+    followAltitudeOffsetMeters: normalizeCameraSetting(
+      "followAltitudeOffsetMeters",
     ),
-    followAltitudeOffsetMeters: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.followAltitudeOffsetMeters,
-        defaultCameraSettings.followAltitudeOffsetMeters ?? 18,
-      ),
-      2,
-      120,
-    ),
-    followPitchDegrees: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.followPitchDegrees,
-        defaultCameraSettings.followPitchDegrees ?? 52,
-      ),
-      15,
-      85,
-    ),
-    lookAheadDistanceMeters: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.lookAheadDistanceMeters,
-        defaultCameraSettings.lookAheadDistanceMeters ?? 42,
-      ),
-      10,
-      200,
-    ),
-    lookAheadPointWindow: clampNumber(
-      getFiniteInteger(
-        rawCameraSettings.lookAheadPointWindow,
-        defaultCameraSettings.lookAheadPointWindow ?? 12,
-      ),
-      2,
-      60,
-    ),
-    smoothingStrength: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.smoothingStrength,
-        defaultCameraSettings.smoothingStrength ?? 1,
-      ),
-      0.25,
-      3,
-    ),
-    overviewPitchDegrees: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.overviewPitchDegrees,
-        defaultCameraSettings.overviewPitchDegrees ?? 55,
-      ),
-      20,
-      85,
-    ),
-    overviewRangeMultiplier: clampNumber(
-      getFiniteNumber(
-        rawCameraSettings.overviewRangeMultiplier,
-        defaultCameraSettings.overviewRangeMultiplier ?? 2.8,
-      ),
-      1,
-      6,
-    ),
+    followPitchDegrees: normalizeCameraSetting("followPitchDegrees"),
+    lookAheadDistanceMeters: normalizeCameraSetting("lookAheadDistanceMeters"),
+    lookAheadPointWindow: normalizeCameraSetting("lookAheadPointWindow"),
+    smoothingStrength: normalizeCameraSetting("smoothingStrength"),
+    overviewPitchDegrees: normalizeCameraSetting("overviewPitchDegrees"),
+    overviewRangeMultiplier: normalizeCameraSetting("overviewRangeMultiplier"),
   };
 }
 
@@ -302,6 +230,36 @@ function setNumericInputValue(elementId, value) {
 
   if (element instanceof HTMLInputElement && Number.isFinite(value)) {
     element.value = String(value);
+  }
+}
+
+function applyNumericInputDefinition(
+  elementId,
+  definition,
+  options = {},
+) {
+  const element = document.getElementById(elementId);
+
+  if (!(element instanceof HTMLInputElement) || !definition) {
+    return;
+  }
+
+  const formatValue = options.formatValue || ((value) => value);
+
+  if (Number.isFinite(definition.min)) {
+    element.min = String(formatValue(definition.min));
+  } else {
+    element.removeAttribute("min");
+  }
+
+  if (Number.isFinite(definition.max)) {
+    element.max = String(formatValue(definition.max));
+  } else {
+    element.removeAttribute("max");
+  }
+
+  if (Number.isFinite(definition.step)) {
+    element.step = String(formatValue(definition.step));
   }
 }
 
@@ -794,22 +752,28 @@ function readMediaPresentationSettings() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  const photoDisplayDefinition =
+    MEDIA_PRESENTATION_SETTINGS_FIELDS.photoDisplayDurationMs;
   const parsedPhotoDisplaySeconds =
     photoDisplayDurationInput instanceof HTMLInputElement
       ? Number(photoDisplayDurationInput.value)
       : Number.NaN;
 
   return {
-    enterDurationMs: EXPORT_OPTIONS.defaults.enterDurationMs ?? 500,
-    exitDurationMs: EXPORT_OPTIONS.defaults.exitDurationMs ?? 700,
+    enterDurationMs: EXPORT_OPTIONS.defaults.enterDurationMs,
+    exitDurationMs: EXPORT_OPTIONS.defaults.exitDurationMs,
     photoDisplayDurationMs: Number.isFinite(parsedPhotoDisplaySeconds)
-      ? Math.max(1000, Math.round(parsedPhotoDisplaySeconds * 1000))
-      : EXPORT_OPTIONS.defaults.photoDisplayDurationMs ?? 5000,
+      ? Math.max(
+          photoDisplayDefinition?.min ?? 1,
+          Math.round(parsedPhotoDisplaySeconds * 1000),
+        )
+      : EXPORT_OPTIONS.defaults.photoDisplayDurationMs,
     photoKenBurnsEnabled:
       photoKenBurnsCheckbox instanceof HTMLInputElement
         ? photoKenBurnsCheckbox.checked
-        : EXPORT_OPTIONS.defaults.photoKenBurnsEnabled ?? true,
-    photoKenBurnsScale: 0.05,
+        : EXPORT_OPTIONS.defaults.photoKenBurnsEnabled,
+    photoKenBurnsScale:
+      MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale?.default ?? 0,
   };
 }
 
@@ -1064,6 +1028,55 @@ function hideMediaPreviewOverlay() {
   mediaLibraryState.activePreviewItemId = null;
 }
 
+function resolveMediaPresentationForRender(playbackState, options = {}) {
+  const hasExplicitMediaPresentation = Object.prototype.hasOwnProperty.call(
+    options,
+    "activeMedia",
+  );
+
+  if (hasExplicitMediaPresentation) {
+    return options.activeMedia && Number.isFinite(options.activeMedia.elapsedMs)
+      ? {
+          item: mediaLibraryState.items.find((item) => {
+            return item.id === options.activeMedia.itemId;
+          }),
+          ...options.activeMedia,
+        }
+      : null;
+  }
+
+  return getActivePreviewMediaPresentation(playbackState.currentTimestamp);
+}
+
+function updateMediaPreviewMetadata(activeItem, presentation) {
+  setTextContent("mediaPreviewType", formatMediaType(activeItem.mediaType));
+  setTextContent("mediaPreviewName", activeItem.fileName);
+
+  if (activeItem.mediaType === "video" && Number.isFinite(presentation.elapsedMs)) {
+    const progressLabel = [
+      formatMediaDuration(presentation.videoCurrentTimeMs),
+      formatMediaDuration(getMediaDurationMs(activeItem)),
+    ]
+      .filter(Boolean)
+      .join(" / ");
+
+    setTextContent(
+      "mediaPreviewTime",
+      activeItem.alignedActivityTime
+        ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}${progressLabel ? ` · ${progressLabel}` : ""}`
+        : progressLabel || "Aligned media preview",
+    );
+    return;
+  }
+
+  setTextContent(
+    "mediaPreviewTime",
+    activeItem.alignedActivityTime
+      ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}`
+      : "Aligned media preview",
+  );
+}
+
 function waitForAnimationFrame() {
   return new Promise((resolve) => {
     window.requestAnimationFrame(() => {
@@ -1207,25 +1220,12 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
     return;
   }
 
-  if (RENDER_MODE !== "preview") {
-    hideMediaPreviewOverlay();
-    return;
-  }
-
-  const hasExportPresentation = Object.prototype.hasOwnProperty.call(
-    options,
-    "exportActiveMedia",
-  );
-  const presentation = hasExportPresentation
-    ? options.exportActiveMedia && Number.isFinite(options.exportActiveMedia.elapsedMs)
-      ? {
-          item: mediaLibraryState.items.find((item) => {
-            return item.id === options.exportActiveMedia.itemId;
-          }),
-          ...options.exportActiveMedia,
-        }
-      : null
-    : getActivePreviewMediaPresentation(playbackState.currentTimestamp);
+  const activeMedia = Object.prototype.hasOwnProperty.call(options, "activeMedia")
+    ? options.activeMedia
+    : options.exportActiveMedia;
+  const presentation = resolveMediaPresentationForRender(playbackState, {
+    activeMedia,
+  });
 
   if (!presentation || !presentation.item) {
     hideMediaPreviewOverlay();
@@ -1239,31 +1239,7 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
   imageElement.style.transform = `scale(${imageScale})`;
   videoElement.style.transform = `scale(${imageScale})`;
 
-  setTextContent("mediaPreviewType", formatMediaType(activeItem.mediaType));
-  setTextContent("mediaPreviewName", activeItem.fileName);
-
-  if (activeItem.mediaType === "video" && Number.isFinite(presentation.elapsedMs)) {
-    const progressLabel = [
-      formatMediaDuration(presentation.videoCurrentTimeMs),
-      formatMediaDuration(getMediaDurationMs(activeItem)),
-    ]
-      .filter(Boolean)
-      .join(" / ");
-
-    setTextContent(
-      "mediaPreviewTime",
-      activeItem.alignedActivityTime
-        ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}${progressLabel ? ` · ${progressLabel}` : ""}`
-        : progressLabel || "Aligned media preview",
-    );
-  } else {
-    setTextContent(
-      "mediaPreviewTime",
-      activeItem.alignedActivityTime
-        ? `Aligned at ${formatTimestamp(activeItem.alignedActivityTime)}`
-        : "Aligned media preview",
-    );
-  }
+  updateMediaPreviewMetadata(activeItem, presentation);
 
   mediaLibraryState.activePreviewItemId = activeItem.id;
 
@@ -1968,8 +1944,8 @@ function getStableFollowHeading(
   const blendedDirection = new Cesium.Cartesian3(0, 0, 0);
   const adaptiveStrength = Cesium.Math.clamp(
     playbackState.camera.adaptiveStrength ?? EXPORT_OPTIONS.defaults.adaptiveStrength,
-    0.25,
-    3,
+    EXPORT_SETTINGS_FIELDS.adaptiveStrength.min,
+    EXPORT_SETTINGS_FIELDS.adaptiveStrength.max,
   );
   const stabilityBias = Cesium.Math.clamp(
     (maneuverAnalysis?.stabilityBias ?? 0) * (0.55 + adaptiveStrength * 0.25),
@@ -2129,8 +2105,8 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
   );
   const adaptiveStrength = Cesium.Math.clamp(
     playbackState.camera.adaptiveStrength ?? EXPORT_OPTIONS.defaults.adaptiveStrength,
-    0.25,
-    3,
+    EXPORT_SETTINGS_FIELDS.adaptiveStrength.min,
+    EXPORT_SETTINGS_FIELDS.adaptiveStrength.max,
   );
   const routeComplexity = Cesium.Math.clamp(
     maneuverAnalysis.routeComplexity * (0.55 + adaptiveStrength * 0.2) +
@@ -2760,6 +2736,46 @@ function setupPlaybackControls(viewer, playbackState) {
   }
 }
 
+function applyParameterInputAttributes() {
+  const cameraInputBindings = [
+    ["cameraFollowDistanceInput", "followDistanceMeters"],
+    ["cameraFollowAltitudeInput", "followAltitudeOffsetMeters"],
+    ["cameraFollowPitchInput", "followPitchDegrees"],
+    ["cameraLookAheadDistanceInput", "lookAheadDistanceMeters"],
+    ["cameraLookAheadWindowInput", "lookAheadPointWindow"],
+    ["cameraSmoothingStrengthInput", "smoothingStrength"],
+    ["cameraOverviewPitchInput", "overviewPitchDegrees"],
+    ["cameraOverviewRangeMultiplierInput", "overviewRangeMultiplier"],
+  ];
+
+  for (const [elementId, settingKey] of cameraInputBindings) {
+    applyNumericInputDefinition(elementId, CAMERA_SETTINGS_FIELDS[settingKey]);
+  }
+
+  applyNumericInputDefinition(
+    "overlaySpeedGaugeMaxInput",
+    EXPORT_SETTINGS_FIELDS.speedGaugeMaxKph,
+  );
+  applyNumericInputDefinition("exportFpsInput", EXPORT_SETTINGS_FIELDS.fps);
+  applyNumericInputDefinition(
+    "exportSpeedInput",
+    EXPORT_SETTINGS_FIELDS.speedMultiplier,
+  );
+  applyNumericInputDefinition(
+    "exportAdaptiveStrengthInput",
+    EXPORT_SETTINGS_FIELDS.adaptiveStrength,
+  );
+  applyNumericInputDefinition(
+    "photoDisplayDurationInput",
+    MEDIA_PRESENTATION_SETTINGS_FIELDS.photoDisplayDurationMs,
+    {
+      formatValue: (value) => {
+        return Math.max(1, Math.round(value / 1000));
+      },
+    },
+  );
+}
+
 function setupCameraSettingsControls(viewer, playbackState) {
   const fieldDefinitions = [
     ["cameraFollowDistanceInput", "followDistanceMeters"],
@@ -2947,15 +2963,20 @@ function populateExportControls() {
   if (photoDisplayDurationInput instanceof HTMLInputElement) {
     photoDisplayDurationInput.value = String(
       Math.max(
-        1,
-        Math.round((EXPORT_OPTIONS.defaults.photoDisplayDurationMs ?? 5000) / 1000),
+        Math.max(
+          1,
+          Math.round(
+            (MEDIA_PRESENTATION_SETTINGS_FIELDS.photoDisplayDurationMs?.min ?? 1) /
+              1000,
+          ),
+        ),
+        Math.round(EXPORT_OPTIONS.defaults.photoDisplayDurationMs / 1000),
       ),
     );
   }
 
   if (photoKenBurnsCheckbox instanceof HTMLInputElement) {
-    photoKenBurnsCheckbox.checked =
-      EXPORT_OPTIONS.defaults.photoKenBurnsEnabled ?? true;
+    photoKenBurnsCheckbox.checked = EXPORT_OPTIONS.defaults.photoKenBurnsEnabled;
   }
 
   updateExportTimingControls();
@@ -3355,16 +3376,10 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   }
 
   playbackState.export.cancelRequested = false;
-  playbackState.speedMultiplier = previewSnapshot.speedMultiplier;
-  playbackState.camera.mode = previewSnapshot.cameraMode;
-  playbackState.camera.adaptiveStrength = previewSnapshot.adaptiveStrength;
-  playbackState.camera.settings = normalizeCameraSettings(previewSnapshot.cameraSettings);
-  playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
-    previewSnapshot.overlayVisibility,
-  );
-  playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
-    previewSnapshot.speedGaugeMaxKph,
-  );
+  applyRendererSettings(playbackState, previewSnapshot, {
+    resetCameraSmoothing: true,
+    syncControls: true,
+  });
   playbackState.ui.speedGaugePeakKph = Number.isFinite(previewSnapshot.speedGaugePeakKph)
     ? previewSnapshot.speedGaugePeakKph
     : 0;
@@ -3374,14 +3389,67 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
     ? previewSnapshot.speedGaugePeakTimestamp
     : previewSnapshot.currentTimestamp;
   playbackState.isPlaying = false;
-  resetFollowCameraSmoothing(playbackState);
-  syncOverlayControls(playbackState);
-  syncCameraSettingsControls(playbackState);
-  applyOverlayVisibility(playbackState);
   setPlaybackTimestamp(viewer, playbackState, previewSnapshot.currentTimestamp);
 
   if (previewSnapshot.isPlaying) {
     startPlayback(viewer, playbackState);
+  }
+}
+
+function applyRendererSettings(playbackState, settings, options = {}) {
+  playbackState.speedMultiplier = settings.speedMultiplier;
+  playbackState.camera.mode = settings.cameraMode;
+  playbackState.camera.adaptiveStrength = settings.adaptiveStrength;
+  playbackState.camera.settings = normalizeCameraSettings(settings.cameraSettings);
+  playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
+    settings.speedGaugeMaxKph,
+  );
+  playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
+    settings.overlayVisibility,
+  );
+
+  if (options.resetCameraSmoothing) {
+    resetFollowCameraSmoothing(playbackState);
+  }
+
+  if (options.syncControls) {
+    syncOverlayControls(playbackState);
+    syncCameraSettingsControls(playbackState);
+  }
+
+  if (options.applyOverlayVisibility !== false) {
+    applyOverlayVisibility(playbackState);
+  }
+}
+
+function setExportSessionState(viewer, enabled) {
+  document.body.classList.toggle("export-session-active", enabled);
+  setMediaPreviewEntitiesVisibility(!enabled);
+  viewer.resize();
+}
+
+async function applyRendererFrame(viewer, playbackState, frameState, options = {}) {
+  const {
+    activeMedia = undefined,
+    deterministicCamera = false,
+    isCancelled = () => false,
+    settleSettings = null,
+    updateUi = false,
+    waitForMedia = false,
+  } = options;
+
+  setPlaybackTimestamp(viewer, playbackState, frameState.activityTimestamp, {
+    updateMediaPreview: false,
+    updateUi,
+    deterministicCamera,
+  });
+  await updateMediaPreviewOverlay(playbackState, {
+    awaitVideoFrame: waitForMedia,
+    activeMedia,
+  });
+
+  if (settleSettings) {
+    await settleSceneForCapture(viewer, settleSettings, isCancelled);
   }
 }
 
@@ -3460,29 +3528,22 @@ async function settleSceneForCapture(viewer, settings, isCancelled) {
 async function renderExportFrame(viewer, playbackState, payload) {
   stopPlayback(playbackState);
   playbackState.isPlaying = false;
-  playbackState.speedMultiplier = payload.settings.speedMultiplier;
-  playbackState.camera.mode = payload.settings.cameraMode;
-  playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
-  playbackState.camera.settings = normalizeCameraSettings(payload.settings.cameraSettings);
-  playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
-    payload.settings.speedGaugeMaxKph,
+  applyRendererSettings(playbackState, payload.settings);
+  await applyRendererFrame(
+    viewer,
+    playbackState,
+    {
+      activityTimestamp: payload.activityTimestamp,
+    },
+    {
+      activeMedia: payload.activeMedia || null,
+      isCancelled: () => {
+        return playbackState.export.cancelRequested;
+      },
+      settleSettings: payload.settings,
+      waitForMedia: true,
+    },
   );
-  playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
-    payload.settings.overlayVisibility,
-  );
-  applyOverlayVisibility(playbackState);
-  setPlaybackTimestamp(viewer, playbackState, payload.activityTimestamp, {
-    updateMediaPreview: false,
-    updateUi: false,
-    deterministicCamera: false,
-  });
-  await updateMediaPreviewOverlay(playbackState, {
-    awaitVideoFrame: true,
-    exportActiveMedia: payload.activeMedia || null,
-  });
-  await settleSceneForCapture(viewer, payload.settings, () => {
-    return playbackState.export.cancelRequested;
-  });
 }
 
 function setupExportRenderBridge(viewer, playbackState) {
@@ -3505,34 +3566,25 @@ function setupExportRenderBridge(viewer, playbackState) {
     }
 
     playbackState.export.cancelRequested = false;
-    document.body.classList.add("export-session-active");
-    setMediaPreviewEntitiesVisibility(false);
-    viewer.resize();
-    playbackState.speedMultiplier = payload.settings.speedMultiplier;
-    playbackState.camera.mode = payload.settings.cameraMode;
-    playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
-    playbackState.camera.settings = normalizeCameraSettings(
-      payload.settings.cameraSettings,
-    );
-    playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
-      payload.settings.speedGaugeMaxKph,
-    );
-    playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
-      payload.settings.overlayVisibility,
-    );
-    syncOverlayControls(playbackState);
-    syncCameraSettingsControls(playbackState);
-    applyOverlayVisibility(playbackState);
-    resetFollowCameraSmoothing(playbackState);
-    setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
-      updateMediaPreview: false,
-      updateUi: false,
-      deterministicCamera: false,
+    setExportSessionState(viewer, true);
+    applyRendererSettings(playbackState, payload.settings, {
+      resetCameraSmoothing: true,
+      syncControls: true,
     });
-    hideMediaPreviewOverlay();
 
     try {
-      await settleSceneForCapture(viewer, payload.settings, () => false);
+      await applyRendererFrame(
+        viewer,
+        playbackState,
+        {
+          activityTimestamp: playbackState.startTimestamp,
+        },
+        {
+          activeMedia: null,
+          settleSettings: payload.settings,
+          waitForMedia: false,
+        },
+      );
       window.bikeFlyOverApp.notifyExportPrepared();
     } catch (error) {
       const message =
@@ -3544,9 +3596,7 @@ function setupExportRenderBridge(viewer, playbackState) {
   });
 
   window.bikeFlyOverApp?.onExportReset(() => {
-    document.body.classList.remove("export-session-active");
-    viewer.resize();
-    setMediaPreviewEntitiesVisibility(true);
+    setExportSessionState(viewer, false);
     restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
     void updateMediaPreviewOverlay(playbackState);
     exportBridgeState.previewSnapshot = null;
@@ -3575,6 +3625,10 @@ async function initializeApp() {
   document.body.classList.toggle("export-mode", RENDER_MODE === "export");
 
   try {
+    if (!EXPORT_OPTIONS?.defaults || !EXPORT_OPTIONS?.parameterConfig) {
+      throw new Error("Export options are unavailable in the renderer.");
+    }
+
     setRouteStatus("Loading satellite basemap...");
     const viewer = createViewer(RENDER_MODE);
     const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
@@ -3608,6 +3662,7 @@ async function initializeApp() {
     window.playbackState = playbackState;
 
     if (RENDER_MODE === "preview") {
+      applyParameterInputAttributes();
       updatePlaybackUI(playbackState);
       updateCameraUI(playbackState);
       populateExportControls();

@@ -6,6 +6,14 @@ const {
   getMediaPresentationTimeline,
   normalizeMediaPresentationSettings,
 } = require("./media-presentation");
+const {
+  CAMERA_SETTINGS_DEFAULTS,
+  CAMERA_SETTINGS_FIELDS,
+  EXPORT_ENUM_DEFAULTS,
+  EXPORT_SETTINGS_DEFAULTS,
+  EXPORT_SETTINGS_FIELDS,
+  OVERLAY_VISIBILITY_DEFAULTS,
+} = require("./parameter-config");
 
 const EXPORT_RESOLUTION_PRESETS = [
   {
@@ -62,39 +70,24 @@ const EXPORT_TIMING_MODES = [
   { id: "proportional", label: "Proportional track time" },
   { id: "fixed-speed", label: "Fixed route speed" },
 ];
-const OVERLAY_VISIBILITY_DEFAULTS = {
-  timeMetric: true,
-  distanceMetric: true,
-  altitudeMetric: true,
-  cadenceMetric: true,
-  temperatureMetric: true,
-  speedGauge: true,
-  heartRateGauge: true,
-};
-const CAMERA_SETTINGS_DEFAULTS = {
-  followDistanceMeters: 260,
-  followAltitudeOffsetMeters: 18,
-  followPitchDegrees: 52,
-  lookAheadDistanceMeters: 42,
-  lookAheadPointWindow: 12,
-  smoothingStrength: 1,
-  overviewPitchDegrees: 55,
-  overviewRangeMultiplier: 2.8,
-};
 
 const EXPORT_DEFAULTS = {
-  resolutionId: EXPORT_RESOLUTION_PRESETS[0].id,
-  width: EXPORT_RESOLUTION_PRESETS[0].width,
-  height: EXPORT_RESOLUTION_PRESETS[0].height,
-  fps: 30,
-  timingMode: EXPORT_TIMING_MODES[0].id,
-  speedMultiplier: 40,
-  adaptiveStrength: 1,
-  cameraMode: EXPORT_CAMERA_MODES[0].id,
-  settleTimeoutMs: 15000,
-  settleStablePasses: 2,
-  maxFrameRetries: 1,
-  speedGaugeMaxKph: 40,
+  resolutionId: EXPORT_ENUM_DEFAULTS.resolutionId,
+  width:
+    getResolutionPresetById(EXPORT_ENUM_DEFAULTS.resolutionId)?.width ??
+    EXPORT_RESOLUTION_PRESETS[0].width,
+  height:
+    getResolutionPresetById(EXPORT_ENUM_DEFAULTS.resolutionId)?.height ??
+    EXPORT_RESOLUTION_PRESETS[0].height,
+  fps: EXPORT_SETTINGS_DEFAULTS.fps,
+  timingMode: EXPORT_ENUM_DEFAULTS.timingMode,
+  speedMultiplier: EXPORT_SETTINGS_DEFAULTS.speedMultiplier,
+  adaptiveStrength: EXPORT_SETTINGS_DEFAULTS.adaptiveStrength,
+  cameraMode: EXPORT_ENUM_DEFAULTS.cameraMode,
+  settleTimeoutMs: EXPORT_SETTINGS_DEFAULTS.settleTimeoutMs,
+  settleStablePasses: EXPORT_SETTINGS_DEFAULTS.settleStablePasses,
+  maxFrameRetries: EXPORT_SETTINGS_DEFAULTS.maxFrameRetries,
+  speedGaugeMaxKph: EXPORT_SETTINGS_DEFAULTS.speedGaugeMaxKph,
   cameraSettings: CAMERA_SETTINGS_DEFAULTS,
   photoDisplayDurationMs: MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
@@ -137,6 +130,14 @@ function normalizePositiveNumber(value, fieldName) {
   return parsed;
 }
 
+function clampToFieldDefinition(value, definition) {
+  return clamp(
+    value,
+    definition?.min ?? Number.NEGATIVE_INFINITY,
+    definition?.max ?? Number.POSITIVE_INFINITY,
+  );
+}
+
 function normalizeOverlayVisibilitySettings(rawVisibility = {}) {
   return Object.keys(OVERLAY_VISIBILITY_DEFAULTS).reduce((visibility, key) => {
     visibility[key] =
@@ -155,8 +156,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.followDistanceMeters,
         "cameraSettings.followDistanceMeters",
       ),
-      80,
-      800,
+      CAMERA_SETTINGS_FIELDS.followDistanceMeters.min,
+      CAMERA_SETTINGS_FIELDS.followDistanceMeters.max,
     ),
     followAltitudeOffsetMeters: clamp(
       normalizePositiveNumber(
@@ -164,8 +165,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.followAltitudeOffsetMeters,
         "cameraSettings.followAltitudeOffsetMeters",
       ),
-      2,
-      120,
+      CAMERA_SETTINGS_FIELDS.followAltitudeOffsetMeters.min,
+      CAMERA_SETTINGS_FIELDS.followAltitudeOffsetMeters.max,
     ),
     followPitchDegrees: clamp(
       normalizePositiveNumber(
@@ -173,8 +174,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.followPitchDegrees,
         "cameraSettings.followPitchDegrees",
       ),
-      15,
-      85,
+      CAMERA_SETTINGS_FIELDS.followPitchDegrees.min,
+      CAMERA_SETTINGS_FIELDS.followPitchDegrees.max,
     ),
     lookAheadDistanceMeters: clamp(
       normalizePositiveNumber(
@@ -182,8 +183,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.lookAheadDistanceMeters,
         "cameraSettings.lookAheadDistanceMeters",
       ),
-      10,
-      200,
+      CAMERA_SETTINGS_FIELDS.lookAheadDistanceMeters.min,
+      CAMERA_SETTINGS_FIELDS.lookAheadDistanceMeters.max,
     ),
     lookAheadPointWindow: clamp(
       normalizePositiveInteger(
@@ -191,8 +192,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.lookAheadPointWindow,
         "cameraSettings.lookAheadPointWindow",
       ),
-      2,
-      60,
+      CAMERA_SETTINGS_FIELDS.lookAheadPointWindow.min,
+      CAMERA_SETTINGS_FIELDS.lookAheadPointWindow.max,
     ),
     smoothingStrength: clamp(
       normalizePositiveNumber(
@@ -200,8 +201,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.smoothingStrength,
         "cameraSettings.smoothingStrength",
       ),
-      0.25,
-      3,
+      CAMERA_SETTINGS_FIELDS.smoothingStrength.min,
+      CAMERA_SETTINGS_FIELDS.smoothingStrength.max,
     ),
     overviewPitchDegrees: clamp(
       normalizePositiveNumber(
@@ -209,8 +210,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.overviewPitchDegrees,
         "cameraSettings.overviewPitchDegrees",
       ),
-      20,
-      85,
+      CAMERA_SETTINGS_FIELDS.overviewPitchDegrees.min,
+      CAMERA_SETTINGS_FIELDS.overviewPitchDegrees.max,
     ),
     overviewRangeMultiplier: clamp(
       normalizePositiveNumber(
@@ -218,8 +219,8 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
           CAMERA_SETTINGS_DEFAULTS.overviewRangeMultiplier,
         "cameraSettings.overviewRangeMultiplier",
       ),
-      1,
-      6,
+      CAMERA_SETTINGS_FIELDS.overviewRangeMultiplier.min,
+      CAMERA_SETTINGS_FIELDS.overviewRangeMultiplier.max,
     ),
   };
 }
@@ -234,47 +235,61 @@ function normalizeExportSettings(rawSettings = {}) {
   const height = resolutionPreset
     ? resolutionPreset.height
     : normalizePositiveInteger(rawSettings.height, "height");
-  const fps = normalizePositiveInteger(
-    rawSettings.fps ?? EXPORT_DEFAULTS.fps,
-    "fps",
+  const fps = clampToFieldDefinition(
+    normalizePositiveInteger(rawSettings.fps ?? EXPORT_DEFAULTS.fps, "fps"),
+    EXPORT_SETTINGS_FIELDS.fps,
   );
   const timingMode = EXPORT_TIMING_MODES.some(
     (mode) => mode.id === rawSettings.timingMode,
   )
     ? rawSettings.timingMode
     : EXPORT_DEFAULTS.timingMode;
-  const speedMultiplier = normalizePositiveNumber(
-    rawSettings.speedMultiplier ?? EXPORT_DEFAULTS.speedMultiplier,
-    "speedMultiplier",
+  const speedMultiplier = clampToFieldDefinition(
+    normalizePositiveNumber(
+      rawSettings.speedMultiplier ?? EXPORT_DEFAULTS.speedMultiplier,
+      "speedMultiplier",
+    ),
+    EXPORT_SETTINGS_FIELDS.speedMultiplier,
   );
-  const adaptiveStrength = clamp(
+  const adaptiveStrength = clampToFieldDefinition(
     normalizePositiveNumber(
       rawSettings.adaptiveStrength ?? EXPORT_DEFAULTS.adaptiveStrength,
       "adaptiveStrength",
     ),
-    0.25,
-    3,
+    EXPORT_SETTINGS_FIELDS.adaptiveStrength,
   );
-  const settleTimeoutMs = normalizePositiveInteger(
-    rawSettings.settleTimeoutMs ?? EXPORT_DEFAULTS.settleTimeoutMs,
-    "settleTimeoutMs",
+  const settleTimeoutMs = clampToFieldDefinition(
+    normalizePositiveInteger(
+      rawSettings.settleTimeoutMs ?? EXPORT_DEFAULTS.settleTimeoutMs,
+      "settleTimeoutMs",
+    ),
+    EXPORT_SETTINGS_FIELDS.settleTimeoutMs,
   );
-  const settleStablePasses = normalizePositiveInteger(
-    rawSettings.settleStablePasses ?? EXPORT_DEFAULTS.settleStablePasses,
-    "settleStablePasses",
+  const settleStablePasses = clampToFieldDefinition(
+    normalizePositiveInteger(
+      rawSettings.settleStablePasses ?? EXPORT_DEFAULTS.settleStablePasses,
+      "settleStablePasses",
+    ),
+    EXPORT_SETTINGS_FIELDS.settleStablePasses,
   );
-  const maxFrameRetries = normalizePositiveInteger(
-    rawSettings.maxFrameRetries ?? EXPORT_DEFAULTS.maxFrameRetries,
-    "maxFrameRetries",
+  const maxFrameRetries = clampToFieldDefinition(
+    normalizePositiveInteger(
+      rawSettings.maxFrameRetries ?? EXPORT_DEFAULTS.maxFrameRetries,
+      "maxFrameRetries",
+    ),
+    EXPORT_SETTINGS_FIELDS.maxFrameRetries,
   );
   const cameraMode = EXPORT_CAMERA_MODES.some(
     (mode) => mode.id === rawSettings.cameraMode,
   )
     ? rawSettings.cameraMode
     : EXPORT_DEFAULTS.cameraMode;
-  const speedGaugeMaxKph = normalizePositiveNumber(
-    rawSettings.speedGaugeMaxKph ?? EXPORT_DEFAULTS.speedGaugeMaxKph,
-    "speedGaugeMaxKph",
+  const speedGaugeMaxKph = clampToFieldDefinition(
+    normalizePositiveNumber(
+      rawSettings.speedGaugeMaxKph ?? EXPORT_DEFAULTS.speedGaugeMaxKph,
+      "speedGaugeMaxKph",
+    ),
+    EXPORT_SETTINGS_FIELDS.speedGaugeMaxKph,
   );
 
   return {
@@ -847,9 +862,11 @@ function formatFrameFileName(frameNumber) {
 }
 
 module.exports = {
+  CAMERA_SETTINGS_FIELDS,
   EXPORT_CAMERA_MODES,
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
+  EXPORT_SETTINGS_FIELDS,
   EXPORT_TIMING_MODES,
   buildExportTimeline,
   computeExportFrameCount,
