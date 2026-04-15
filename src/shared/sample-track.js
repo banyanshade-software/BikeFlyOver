@@ -6,7 +6,7 @@ const {
 } = require("../io/tcx/parseTcx");
 
 function getSampleTrackPath() {
-  return path.join(__dirname, "../../samples/activity_22469836126.tcx");
+  return path.join(__dirname, "../../samples/activity.tcx");
 }
 
 async function loadSampleTrack() {
