@@ -2284,10 +2284,6 @@ function updateMetricOverlay(playbackState) {
     "metricOverlaySpeedGaugeMax",
     `${Math.round(speedGaugeMaxKph)} km/h`,
   );
-  setTextContent(
-    "metricOverlaySpeedGaugeMeta",
-    `Peak hold ${speedGaugePeakKph.toFixed(1)} km/h`,
-  );
 
   if (speedGaugeDial instanceof HTMLElement) {
     speedGaugeDial.style.setProperty(

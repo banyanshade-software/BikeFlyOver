@@ -548,7 +548,7 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 148px;
+  width: 138px;
   aspect-ratio: 1;
   border-radius: 50%;
   background:
@@ -583,7 +583,7 @@ body {
 }
 
 .metric-speedometer__value {
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 700;
   color: #f4f8fb;
 }
