@@ -63,8 +63,11 @@ const EXPORT_TIMING_MODES = [
   { id: "fixed-speed", label: "Fixed route speed" },
 ];
 const OVERLAY_VISIBILITY_DEFAULTS = {
-  metricCard: true,
-  metricChips: true,
+  timeMetric: true,
+  distanceMetric: true,
+  altitudeMetric: true,
+  cadenceMetric: true,
+  temperatureMetric: true,
   speedGauge: true,
   heartRateGauge: true,
 };

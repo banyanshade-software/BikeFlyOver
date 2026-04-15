@@ -31,6 +31,12 @@ function buildTrackpoint(rawTrackpoint) {
   const time = rawTrackpoint?.Time;
   const heartRate = toNumber(rawTrackpoint?.HeartRateBpm?.Value);
   const speed = toNumber(rawTrackpoint?.Extensions?.TPX?.Speed);
+  const cadence = toNumber(
+    rawTrackpoint?.Cadence ?? rawTrackpoint?.Extensions?.TPX?.RunCadence,
+  );
+  const temperature = toNumber(
+    rawTrackpoint?.Extensions?.TPX?.Temp ?? rawTrackpoint?.Temperature,
+  );
   const distance = toNumber(rawTrackpoint?.DistanceMeters);
   const timestamp = Date.parse(time);
 
@@ -52,6 +58,8 @@ function buildTrackpoint(rawTrackpoint) {
     distance: Number.isFinite(distance) ? distance : null,
     heartRate: Number.isFinite(heartRate) ? heartRate : null,
     speed: Number.isFinite(speed) ? speed : null,
+    cadence: Number.isFinite(cadence) ? cadence : null,
+    temperature: Number.isFinite(temperature) ? temperature : null,
   };
 }
 

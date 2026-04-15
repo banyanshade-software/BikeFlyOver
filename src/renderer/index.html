@@ -125,13 +125,25 @@
           <section class="controls-panel" aria-label="Overlay controls">
             <h2>Overlays</h2>
             <div class="field-stack">
-              <label class="checkbox-group" for="overlayMetricCardCheckbox">
-                <input id="overlayMetricCardCheckbox" type="checkbox" checked />
-                <span>Show grouped activity metric card</span>
+              <label class="checkbox-group" for="overlayTimeMetricCheckbox">
+                <input id="overlayTimeMetricCheckbox" type="checkbox" checked />
+                <span>Show time metric</span>
               </label>
-              <label class="checkbox-group" for="overlayMetricChipsCheckbox">
-                <input id="overlayMetricChipsCheckbox" type="checkbox" checked />
-                <span>Show compact metric chips</span>
+              <label class="checkbox-group" for="overlayDistanceMetricCheckbox">
+                <input id="overlayDistanceMetricCheckbox" type="checkbox" checked />
+                <span>Show distance metric</span>
+              </label>
+              <label class="checkbox-group" for="overlayAltitudeMetricCheckbox">
+                <input id="overlayAltitudeMetricCheckbox" type="checkbox" checked />
+                <span>Show altitude metric</span>
+              </label>
+              <label class="checkbox-group" for="overlayCadenceMetricCheckbox">
+                <input id="overlayCadenceMetricCheckbox" type="checkbox" checked />
+                <span>Show cadence metric</span>
+              </label>
+              <label class="checkbox-group" for="overlayTemperatureMetricCheckbox">
+                <input id="overlayTemperatureMetricCheckbox" type="checkbox" checked />
+                <span>Show temperature metric</span>
               </label>
               <label class="checkbox-group" for="overlaySpeedGaugeCheckbox">
                 <input id="overlaySpeedGaugeCheckbox" type="checkbox" checked />
@@ -299,32 +311,27 @@
               id="metricOverlayPrimaryColumn"
               class="metric-overlay__column metric-overlay__column--primary"
             >
-              <article id="metricOverlayMetricCard" class="metric-card">
-                <p class="metric-card__title">Activity metrics</p>
-                <dl class="metric-card__grid">
-                  <div>
-                    <dt>Time</dt>
-                    <dd id="metricOverlayTime">--:--</dd>
-                  </div>
-                  <div>
-                    <dt>Distance</dt>
-                    <dd id="metricOverlayDistance">N/A</dd>
-                  </div>
-                  <div>
-                    <dt>Altitude</dt>
-                    <dd id="metricOverlayAltitude">N/A</dd>
-                  </div>
-                </dl>
-              </article>
-              <div id="metricOverlayMetricChips" class="metric-chip-row">
-                <div class="metric-chip">
-                  <span class="metric-chip__label">Speed</span>
-                  <span id="metricOverlaySpeedChip" class="metric-chip__value">N/A</span>
-                </div>
-                <div class="metric-chip">
-                  <span class="metric-chip__label">Progress</span>
-                  <span id="metricOverlayProgress" class="metric-chip__value">0.0%</span>
-                </div>
+              <div id="metricOverlayMetricTiles" class="metric-tile-grid">
+                <article id="metricOverlayTimeCard" class="metric-chip">
+                  <span class="metric-chip__label">Time</span>
+                  <span id="metricOverlayTime" class="metric-chip__value">--:--</span>
+                </article>
+                <article id="metricOverlayDistanceCard" class="metric-chip">
+                  <span class="metric-chip__label">Distance</span>
+                  <span id="metricOverlayDistance" class="metric-chip__value">N/A</span>
+                </article>
+                <article id="metricOverlayAltitudeCard" class="metric-chip">
+                  <span class="metric-chip__label">Altitude</span>
+                  <span id="metricOverlayAltitude" class="metric-chip__value">N/A</span>
+                </article>
+                <article id="metricOverlayCadenceCard" class="metric-chip">
+                  <span class="metric-chip__label">Cadence</span>
+                  <span id="metricOverlayCadence" class="metric-chip__value">N/A</span>
+                </article>
+                <article id="metricOverlayTemperatureCard" class="metric-chip">
+                  <span class="metric-chip__label">Temperature</span>
+                  <span id="metricOverlayTemperature" class="metric-chip__value">N/A</span>
+                </article>
               </div>
             </section>
             <section

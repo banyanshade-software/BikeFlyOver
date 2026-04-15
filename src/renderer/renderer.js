@@ -17,8 +17,11 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     enterDurationMs: 500,
     exitDurationMs: 700,
     overlayVisibility: {
-      metricCard: true,
-      metricChips: true,
+      timeMetric: true,
+      distanceMetric: true,
+      altitudeMetric: true,
+      cadenceMetric: true,
+      temperatureMetric: true,
       speedGauge: true,
       heartRateGauge: true,
     },
@@ -54,21 +57,46 @@ const mediaLibraryState = {
 const TIMELINE_SLIDER_MAX = 1000;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
 const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze({
-  metricCard: true,
-  metricChips: true,
+  timeMetric: true,
+  distanceMetric: true,
+  altitudeMetric: true,
+  cadenceMetric: true,
+  temperatureMetric: true,
   speedGauge: true,
   heartRateGauge: true,
 });
+const PRIMARY_METRIC_KEYS = Object.freeze([
+  "timeMetric",
+  "distanceMetric",
+  "altitudeMetric",
+  "cadenceMetric",
+  "temperatureMetric",
+]);
 const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
   {
-    key: "metricCard",
-    checkboxId: "overlayMetricCardCheckbox",
-    elementId: "metricOverlayMetricCard",
+    key: "timeMetric",
+    checkboxId: "overlayTimeMetricCheckbox",
+    elementId: "metricOverlayTimeCard",
   },
   {
-    key: "metricChips",
-    checkboxId: "overlayMetricChipsCheckbox",
-    elementId: "metricOverlayMetricChips",
+    key: "distanceMetric",
+    checkboxId: "overlayDistanceMetricCheckbox",
+    elementId: "metricOverlayDistanceCard",
+  },
+  {
+    key: "altitudeMetric",
+    checkboxId: "overlayAltitudeMetricCheckbox",
+    elementId: "metricOverlayAltitudeCard",
+  },
+  {
+    key: "cadenceMetric",
+    checkboxId: "overlayCadenceMetricCheckbox",
+    elementId: "metricOverlayCadenceCard",
+  },
+  {
+    key: "temperatureMetric",
+    checkboxId: "overlayTemperatureMetricCheckbox",
+    elementId: "metricOverlayTemperatureCard",
   },
   {
     key: "speedGauge",
@@ -242,7 +270,7 @@ function applyOverlayVisibility(playbackState) {
     heartRateGaugeCard instanceof HTMLElement
       ? heartRateGaugeCard.dataset.available === "true"
       : false;
-  const primaryVisible = overlayVisibility.metricCard || overlayVisibility.metricChips;
+  const primaryVisible = PRIMARY_METRIC_KEYS.some((key) => overlayVisibility[key]);
   const secondaryVisible =
     overlayVisibility.speedGauge ||
     (overlayVisibility.heartRateGauge && heartRateGaugeAvailable);
@@ -370,6 +398,22 @@ function formatAltitudeValue(altitudeMeters) {
   }
 
   return `${Math.round(altitudeMeters)} m`;
+}
+
+function formatCadenceValue(cadenceRpm) {
+  if (!Number.isFinite(cadenceRpm)) {
+    return "N/A";
+  }
+
+  return `${Math.round(cadenceRpm)} rpm`;
+}
+
+function formatTemperatureValue(temperatureCelsius) {
+  if (!Number.isFinite(temperatureCelsius)) {
+    return "N/A";
+  }
+
+  return `${temperatureCelsius.toFixed(1)} C`;
 }
 
 function getHeartRateGaugeState(heartRate) {
@@ -2129,6 +2173,16 @@ function interpolateTrackpoint(playbackState) {
         ? startTrackpoint.heartRate ?? endTrackpoint.heartRate ?? null
         : startTrackpoint.heartRate +
           (endTrackpoint.heartRate - startTrackpoint.heartRate) * segmentRatio,
+    cadence:
+      startTrackpoint.cadence === null || endTrackpoint.cadence === null
+        ? startTrackpoint.cadence ?? endTrackpoint.cadence ?? null
+        : startTrackpoint.cadence +
+          (endTrackpoint.cadence - startTrackpoint.cadence) * segmentRatio,
+    temperature:
+      startTrackpoint.temperature === null || endTrackpoint.temperature === null
+        ? startTrackpoint.temperature ?? endTrackpoint.temperature ?? null
+        : startTrackpoint.temperature +
+          (endTrackpoint.temperature - startTrackpoint.temperature) * segmentRatio,
     speed:
       startTrackpoint.speed === null || endTrackpoint.speed === null
         ? null
@@ -2241,9 +2295,10 @@ function updateMetricOverlay(playbackState) {
   const heartRateGaugeCard = document.getElementById("metricOverlayHeartRateGaugeCard");
   const heartRateGaugeFill = document.getElementById("metricOverlayHeartRateGaugeFill");
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
-  const progressRatio = getPlaybackProgressRatio(playbackState);
   const speedMetersPerSecond = playbackState.currentSample.speed;
   const heartRate = playbackState.currentSample.heartRate;
+  const cadence = playbackState.currentSample.cadence;
+  const temperature = playbackState.currentSample.temperature;
   const heartRateGaugeState = getHeartRateGaugeState(heartRate);
   const speedKph = Number.isFinite(speedMetersPerSecond)
     ? speedMetersPerSecond * 3.6
@@ -2271,15 +2326,9 @@ function updateMetricOverlay(playbackState) {
     "metricOverlayAltitude",
     formatAltitudeValue(playbackState.currentSample.altitude),
   );
-  setTextContent(
-    "metricOverlaySpeed",
-    formatOverlaySpeed(speedMetersPerSecond),
-  );
-  setTextContent(
-    "metricOverlaySpeedChip",
-    formatOverlaySpeed(speedMetersPerSecond),
-  );
-  setTextContent("metricOverlayProgress", formatProgress(progressRatio));
+  setTextContent("metricOverlayCadence", formatCadenceValue(cadence));
+  setTextContent("metricOverlayTemperature", formatTemperatureValue(temperature));
+  setTextContent("metricOverlaySpeed", formatOverlaySpeed(speedMetersPerSecond));
   setTextContent(
     "metricOverlaySpeedGaugeMax",
     `${Math.round(speedGaugeMaxKph)} km/h`,
@@ -2923,8 +2972,11 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
-  setElementDisabled("overlayMetricCardCheckbox", exportUiState.isExporting);
-  setElementDisabled("overlayMetricChipsCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayDistanceMetricCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayAltitudeMetricCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayCadenceMetricCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlayTemperatureMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayHeartRateGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeMaxInput", exportUiState.isExporting);
