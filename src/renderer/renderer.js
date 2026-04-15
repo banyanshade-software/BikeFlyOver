@@ -11,7 +11,7 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     settleTimeoutMs: 15000,
     settleStablePasses: 2,
     maxFrameRetries: 1,
-    speedGaugeMaxKph: 60,
+    speedGaugeMaxKph: 40,
     photoDisplayDurationMs: 5000,
     photoKenBurnsEnabled: true,
     enterDurationMs: 500,
@@ -198,7 +198,7 @@ function normalizeSpeedGaugeMaxKph(value) {
   const parsed = Number(value);
 
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    return EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? 60;
+    return EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? 40;
   }
 
   return parsed;
