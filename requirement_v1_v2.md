@@ -39,6 +39,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-15 |v3  | Camera | Add predefined camera moves at selected points (orbit, rotate around point, cinematic transition) | Required by the application overview | Not implemented |
 | F-16 |v3  | Camera | Add keyframe-based camera authoring on the route timeline | Enables repeatable custom fly-over behavior | Not implemented |
 | F-17 |v3  | Camera | Stabilize and refine follow-camera behavior for long tracks and sharp turns | Mentioned as a risk and improves export quality | Partial |
+| F-69 | v2 | Terrain | Render the fly-over on real 3D terrain with configurable vertical exaggeration | Makes mountains and valleys visible while keeping the route visually attached to the ground | Implemented |
 | F-18 |v1  | Media | Import photos and videos into the project | Required by the spec | Implemented |
 | F-19 |v1  | Media | Read EXIF timestamps from photos and videos | Required for automatic placement | Implemented |
 | F-20 |v1  | Media | Place photos/videos on the route timeline using timestamp alignment | Required by the spec | Implemented |
@@ -102,7 +103,7 @@ These capabilities already exist in the current proof of concept and should be t
 
 ### v2 candidates
 
-- Camera editing and smarter video composition: `F-14`, `F-21`, `F-23`, `F-24`, `F-25`, `F-26`, `F-28`, `F-29`, `F-30`, `F-64`, `F-65`, `F-66`
+- Camera, terrain, and smarter video composition: `F-14`, `F-21`, `F-23`, `F-24`, `F-25`, `F-26`, `F-28`, `F-29`, `F-30`, `F-64`, `F-65`, `F-66`, `F-69`
 - GUI workflow improvements: `F-37`, `F-38`, `F-39`
 - Performance and robustness improvements for the export/editor loop: `F-46`, `F-47`, `F-52`, `F-53`, `F-54`, `F-60`
 

@@ -3,6 +3,12 @@ const PARAMETER_CONFIG = EXPORT_OPTIONS?.parameterConfig || {};
 const CAMERA_SETTINGS_FIELDS = PARAMETER_CONFIG.cameraSettings || {};
 const EXPORT_SETTINGS_FIELDS = PARAMETER_CONFIG.exportSettings || {};
 const MEDIA_PRESENTATION_SETTINGS_FIELDS = PARAMETER_CONFIG.mediaPresentation || {};
+// F-69: read shared terrain metadata in the renderer so terrain exaggeration stays aligned with export settings.
+const TERRAIN_SETTINGS_FIELDS = PARAMETER_CONFIG.terrainSettings || {};
+const DEFAULT_TERRAIN_PROVIDER_LABEL = "ArcGIS World Elevation";
+const DEFAULT_TERRAIN_PROVIDER_URL =
+  "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer";
+// end F-69
 const RENDER_MODE =
   new URLSearchParams(window.location.search).get("mode") === "export"
     ? "export"
@@ -224,6 +230,62 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
     overviewRangeMultiplier: normalizeCameraSetting("overviewRangeMultiplier"),
   };
 }
+
+// F-69: normalize terrain settings in the renderer so exaggeration changes stay bounded and preview/export use the same values.
+function normalizeTerrainSettings(rawTerrainSettings = {}) {
+  const defaultTerrainSettings = EXPORT_OPTIONS.defaults?.terrainSettings || {};
+  const normalizeTerrainSetting = (settingKey, fallbackValue) => {
+    const definition = TERRAIN_SETTINGS_FIELDS[settingKey];
+    const fallback =
+      defaultTerrainSettings[settingKey] ?? definition?.default ?? fallbackValue;
+
+    return normalizeConfiguredNumber(
+      rawTerrainSettings[settingKey],
+      definition,
+      fallback,
+    );
+  };
+
+  return {
+    exaggeration: normalizeTerrainSetting("exaggeration", 1),
+    routeOffsetMeters: normalizeTerrainSetting(
+      "routeOffsetMeters",
+      ROUTE_DISPLAY_HEIGHT_METERS,
+    ),
+  };
+}
+
+function setTerrainStatus(message) {
+  setTextContent("terrainStatus", message);
+}
+
+function syncTerrainSettingsControls(playbackState) {
+  const terrainSettings = normalizeTerrainSettings(playbackState.terrain.settings);
+  const terrainExaggerationInput = document.getElementById(
+    "terrainExaggerationInput",
+  );
+
+  playbackState.terrain.settings = terrainSettings;
+
+  if (terrainExaggerationInput instanceof HTMLInputElement) {
+    terrainExaggerationInput.value = String(terrainSettings.exaggeration);
+  }
+
+  if (playbackState.terrain.providerError) {
+    setTerrainStatus("3D terrain unavailable; using flat terrain fallback.");
+    return;
+  }
+
+  if (playbackState.terrain.providerReady) {
+    setTerrainStatus(
+      `${playbackState.terrain.providerLabel || "3D terrain"} loaded (${terrainSettings.exaggeration.toFixed(1)}x exaggeration).`,
+    );
+    return;
+  }
+
+  setTerrainStatus("Loading 3D terrain...");
+}
+// end F-69
 
 function setNumericInputValue(elementId, value) {
   const element = document.getElementById(elementId);
@@ -1375,6 +1437,21 @@ function createPlaybackState(trackpoints, options = {}) {
     currentSamplePosition: null,
     playedRoutePositionsScratch: [],
     routePositions: [],
+    // F-69: keep terrain state in playback so route geometry and export snapshots can share the same exaggeration/source data.
+    terrain: {
+      providerError: null,
+      providerLabel: DEFAULT_TERRAIN_PROVIDER_LABEL,
+      providerReady: false,
+      sampledHeights: [],
+      settings: normalizeTerrainSettings(
+        options.terrainSettings ?? EXPORT_OPTIONS.defaults.terrainSettings,
+      ),
+    },
+    route: {
+      endEntity: null,
+      startEntity: null,
+    },
+    // end F-69
     camera: {
       mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
       adaptiveStrength:
@@ -1519,12 +1596,6 @@ function alignMediaItemsToTrack(mediaItems, trackpoints) {
     });
 }
 
-function buildRoutePositions(Cesium, trackpoints) {
-  return trackpoints.map((trackpoint) =>
-    toRouteDisplayPosition(Cesium, trackpoint),
-  );
-}
-
 function createBaseLayer(Cesium) {
   const baseLayer = Cesium.ImageryLayer.fromProviderAsync(
     Cesium.ArcGisMapServerImageryProvider.fromBasemapType(
@@ -1544,10 +1615,102 @@ function createBaseLayer(Cesium) {
   return baseLayer;
 }
 
-function addRouteEntities(viewer, sampleTrack) {
+// F-69: sample terrain-backed route heights and rebuild route geometry so the fly-over stays attached to exaggerated terrain.
+function getTerrainDisplayHeight(playbackState, trackpointIndex) {
+  const sampledHeight = playbackState.terrain.sampledHeights[trackpointIndex];
+  const terrainSettings = normalizeTerrainSettings(playbackState.terrain.settings);
+
+  return (
+    (Number.isFinite(sampledHeight) ? sampledHeight : 0) *
+      terrainSettings.exaggeration +
+    terrainSettings.routeOffsetMeters
+  );
+}
+
+function buildRoutePositions(Cesium, playbackState) {
+  return playbackState.trackpoints.map((trackpoint, trackpointIndex) =>
+    Cesium.Cartesian3.fromDegrees(
+      trackpoint.longitude,
+      trackpoint.latitude,
+      getTerrainDisplayHeight(playbackState, trackpointIndex),
+    ),
+  );
+}
+
+async function sampleRouteTerrainHeights(viewer, playbackState) {
   const Cesium = window.Cesium;
-  const { trackpoints } = sampleTrack;
-  const routePositions = buildRoutePositions(Cesium, trackpoints);
+
+  if (
+    !Cesium ||
+    !viewer?.terrainProvider ||
+    viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider
+  ) {
+    playbackState.terrain.sampledHeights = playbackState.trackpoints.map(() => 0);
+    return;
+  }
+
+  const cartographics = playbackState.trackpoints.map((trackpoint) => {
+    return Cesium.Cartographic.fromDegrees(
+      trackpoint.longitude,
+      trackpoint.latitude,
+      0,
+    );
+  });
+  const sampledCartographics = await Cesium.sampleTerrainMostDetailed(
+    viewer.terrainProvider,
+    cartographics,
+  );
+
+  playbackState.terrain.sampledHeights = sampledCartographics.map((cartographic) => {
+    return Number.isFinite(cartographic?.height) ? cartographic.height : 0;
+  });
+}
+
+function applyRoutePositionsToEntities(playbackState) {
+  const Cesium = window.Cesium;
+  const routePositions = buildRoutePositions(Cesium, playbackState);
+  const routeBoundingSphere = Cesium.BoundingSphere.fromPoints(routePositions);
+  const startPosition = routePositions[0] || null;
+  const endPosition = routePositions[routePositions.length - 1] || null;
+
+  playbackState.routePositions = routePositions;
+  playbackState.camera.routeBoundingSphere = routeBoundingSphere;
+
+  if (playbackState.camera.routeEntity?.polyline) {
+    playbackState.camera.routeEntity.polyline.positions = routePositions;
+  }
+
+  if (playbackState.route.startEntity) {
+    playbackState.route.startEntity.position = startPosition;
+  }
+
+  if (playbackState.route.endEntity) {
+    playbackState.route.endEntity.position = endPosition;
+  }
+}
+
+async function refreshTerrainRouteGeometry(viewer, playbackState, options = {}) {
+  const { resampleHeights = false, updateTimelineState = true } = options;
+
+  if (resampleHeights || playbackState.terrain.sampledHeights.length === 0) {
+    await sampleRouteTerrainHeights(viewer, playbackState);
+  }
+
+  applyRoutePositionsToEntities(playbackState);
+
+  if (updateTimelineState) {
+    setPlaybackTimestamp(viewer, playbackState, playbackState.currentTimestamp, {
+      updateMediaPreview: false,
+      updateUi: RENDER_MODE !== "export",
+      deterministicCamera: RENDER_MODE === "export",
+    });
+  }
+}
+// end F-69
+
+function addRouteEntities(viewer, playbackState, sampleTrack) {
+  const Cesium = window.Cesium;
+  const routePositions = buildRoutePositions(Cesium, playbackState);
   const routeBoundingSphere = Cesium.BoundingSphere.fromPoints(routePositions);
   const startPosition = routePositions[0];
   const endPosition = routePositions[routePositions.length - 1];
@@ -1558,12 +1721,12 @@ function addRouteEntities(viewer, sampleTrack) {
     polyline: {
       positions: routePositions,
       width: 2.5,
-      clampToGround: false,
+      clampToGround: true,
       material: Cesium.Color.fromCssColorString("#ffffff").withAlpha(0.95),
     },
   });
 
-  viewer.entities.add({
+  const startEntity = viewer.entities.add({
     id: "route-start",
     name: "Route start",
     position: startPosition,
@@ -1576,7 +1739,7 @@ function addRouteEntities(viewer, sampleTrack) {
     },
   });
 
-  viewer.entities.add({
+  const endEntity = viewer.entities.add({
     id: "route-end",
     name: "Route end",
     position: endPosition,
@@ -1588,6 +1751,9 @@ function addRouteEntities(viewer, sampleTrack) {
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
     },
   });
+
+  playbackState.route.startEntity = startEntity;
+  playbackState.route.endEntity = endEntity;
 
   return { routeBoundingSphere, routeEntity, routePositions };
 }
@@ -1652,13 +1818,19 @@ function applyCameraSettingsChange(viewer, playbackState, nextPartialSettings = 
   syncPlaybackState(viewer, playbackState);
 }
 
-function toRouteDisplayPosition(Cesium, trackpoint) {
+// F-69: build explicit terrain-aware positions so camera and route-following entities share the same grounded path.
+function toRouteDisplayPosition(
+  Cesium,
+  trackpoint,
+  displayHeight = ROUTE_DISPLAY_HEIGHT_METERS,
+) {
   return Cesium.Cartesian3.fromDegrees(
     trackpoint.longitude,
     trackpoint.latitude,
-    ROUTE_DISPLAY_HEIGHT_METERS,
+    displayHeight,
   );
 }
+// end F-69
 
 function setOverviewCamera(viewer, playbackState) {
   const Cesium = window.Cesium;
@@ -2215,6 +2387,83 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
   });
 }
 
+// F-69: load terrain with a graceful fallback so preview/export can use real relief without breaking offline startup.
+async function loadTerrainProvider(Cesium) {
+  try {
+    const terrainProvider = await Cesium.ArcGISTiledElevationTerrainProvider.fromUrl(
+      DEFAULT_TERRAIN_PROVIDER_URL,
+    );
+
+    return {
+      error: null,
+      provider: terrainProvider,
+      providerLabel: DEFAULT_TERRAIN_PROVIDER_LABEL,
+    };
+  } catch (error) {
+    console.error("3D terrain failed to load:", error);
+
+    return {
+      error: error instanceof Error ? error : new Error(String(error)),
+      provider: new Cesium.EllipsoidTerrainProvider(),
+      providerLabel: "Flat terrain fallback",
+    };
+  }
+}
+
+function applyTerrainSceneSettings(viewer, terrainSettings) {
+  viewer.scene.globe.depthTestAgainstTerrain = true;
+  viewer.scene.verticalExaggeration = terrainSettings.exaggeration;
+  viewer.scene.verticalExaggerationRelativeHeight = 0;
+  viewer.scene.requestRender();
+}
+
+async function initializeViewerTerrain(viewer, playbackState) {
+  const Cesium = window.Cesium;
+  const terrainState = await loadTerrainProvider(Cesium);
+
+  viewer.terrainProvider = terrainState.provider;
+  playbackState.terrain.providerError = terrainState.error;
+  playbackState.terrain.providerLabel = terrainState.providerLabel;
+  playbackState.terrain.providerReady = !terrainState.error;
+  applyTerrainSceneSettings(
+    viewer,
+    normalizeTerrainSettings(playbackState.terrain.settings),
+  );
+  syncTerrainSettingsControls(playbackState);
+
+  try {
+    await refreshTerrainRouteGeometry(viewer, playbackState, {
+      resampleHeights: true,
+      updateTimelineState: false,
+    });
+  } catch (error) {
+    console.error("Terrain sampling failed:", error);
+    playbackState.terrain.sampledHeights = playbackState.trackpoints.map(() => 0);
+    playbackState.terrain.providerError = error instanceof Error ? error : new Error(String(error));
+    playbackState.terrain.providerReady = false;
+    setTerrainStatus("3D terrain unavailable; using flat terrain fallback.");
+  }
+}
+
+async function applyTerrainSettingsChange(viewer, playbackState, nextPartialSettings = {}) {
+  playbackState.terrain.settings = normalizeTerrainSettings({
+    ...playbackState.terrain.settings,
+    ...nextPartialSettings,
+  });
+  applyTerrainSceneSettings(viewer, playbackState.terrain.settings);
+  try {
+    await refreshTerrainRouteGeometry(viewer, playbackState, {
+      updateTimelineState: true,
+    });
+    syncMediaPreviewEntities(viewer, playbackState);
+  } catch (error) {
+    console.error("Applying terrain settings failed:", error);
+    setTerrainStatus("3D terrain refresh failed.");
+  }
+  syncTerrainSettingsControls(playbackState);
+}
+// end F-69
+
 function createViewer(renderMode) {
   const Cesium = window.Cesium;
 
@@ -2238,7 +2487,7 @@ function createViewer(renderMode) {
   });
 
   viewer.scene.globe.enableLighting = true;
-  viewer.scene.globe.depthTestAgainstTerrain = false;
+  viewer.scene.globe.depthTestAgainstTerrain = true;
   viewer.scene.screenSpaceCameraController.inertiaSpin = 0;
   viewer.scene.screenSpaceCameraController.inertiaTranslate = 0;
   viewer.scene.screenSpaceCameraController.inertiaZoom = 0;
@@ -2285,7 +2534,11 @@ function interpolateTrackpoint(playbackState) {
     };
     playbackState.currentSamplePosition =
       playbackState.routePositions[currentIndex] ||
-      toRouteDisplayPosition(Cesium, startTrackpoint);
+      toRouteDisplayPosition(
+        Cesium,
+        startTrackpoint,
+        getTerrainDisplayHeight(playbackState, currentIndex),
+      );
     return;
   }
 
@@ -2336,11 +2589,21 @@ function interpolateTrackpoint(playbackState) {
         : startTrackpoint.speed +
           (endTrackpoint.speed - startTrackpoint.speed) * segmentRatio,
   };
-  playbackState.currentSamplePosition = Cesium.Cartesian3.fromDegrees(
-    playbackState.currentSample.longitude,
-    playbackState.currentSample.latitude,
-    ROUTE_DISPLAY_HEIGHT_METERS,
+  // F-69: interpolate along the terrain-backed route height so the active marker and camera stay above exaggerated terrain.
+  const startDisplayHeight = getTerrainDisplayHeight(playbackState, currentIndex);
+  const endDisplayHeight = getTerrainDisplayHeight(
+    playbackState,
+    Math.min(currentIndex + 1, trackpoints.length - 1),
   );
+  const interpolatedDisplayHeight =
+    startDisplayHeight + (endDisplayHeight - startDisplayHeight) * segmentRatio;
+
+  playbackState.currentSamplePosition = toRouteDisplayPosition(
+    Cesium,
+    playbackState.currentSample,
+    interpolatedDisplayHeight,
+  );
+  // end F-69
 }
 
 function buildPlayedRoutePositions(Cesium, playbackState) {
@@ -2386,7 +2649,7 @@ function addPlaybackEntities(viewer, playbackState) {
         return buildPlayedRoutePositions(Cesium, playbackState);
       }, false),
       width: 10,
-      clampToGround: false,
+      clampToGround: true,
       material: new Cesium.PolylineGlowMaterialProperty({
         color: Cesium.Color.fromCssColorString("#2c7dff"),
         glowPower: 0.16,
@@ -2752,6 +3015,12 @@ function applyParameterInputAttributes() {
     applyNumericInputDefinition(elementId, CAMERA_SETTINGS_FIELDS[settingKey]);
   }
 
+  // F-69: apply terrain parameter bounds from shared config so the terrain exaggeration control stays aligned with export settings.
+  applyNumericInputDefinition(
+    "terrainExaggerationInput",
+    TERRAIN_SETTINGS_FIELDS.exaggeration,
+  );
+  // end F-69
   applyNumericInputDefinition(
     "overlaySpeedGaugeMaxInput",
     EXPORT_SETTINGS_FIELDS.speedGaugeMaxKph,
@@ -2775,6 +3044,38 @@ function applyParameterInputAttributes() {
     },
   );
 }
+
+// F-69: wire the terrain exaggeration control so terrain relief and grounded route geometry update together.
+function setupTerrainControls(viewer, playbackState) {
+  const terrainExaggerationInput = document.getElementById("terrainExaggerationInput");
+
+  syncTerrainSettingsControls(playbackState);
+
+  terrainExaggerationInput?.addEventListener("input", async (event) => {
+    const target = event.currentTarget;
+
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    await applyTerrainSettingsChange(viewer, playbackState, {
+      exaggeration: target.value,
+    });
+  });
+
+  terrainExaggerationInput?.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    await applyTerrainSettingsChange(viewer, playbackState, {
+      exaggeration: target.value,
+    });
+  });
+}
+// end F-69
 
 function setupCameraSettingsControls(viewer, playbackState) {
   const fieldDefinitions = [
@@ -3209,6 +3510,7 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("cameraSmoothingStrengthInput", exportUiState.isExporting);
   setElementDisabled("cameraOverviewPitchInput", exportUiState.isExporting);
   setElementDisabled("cameraOverviewRangeMultiplierInput", exportUiState.isExporting);
+  setElementDisabled("terrainExaggerationInput", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
@@ -3269,6 +3571,9 @@ function readExportSettings() {
       window.playbackState?.ui?.speedGaugeMaxKph,
     ),
     cameraSettings: normalizeCameraSettings(window.playbackState?.camera?.settings),
+    // F-69: include terrain settings in export payloads so exported frames use the same terrain exaggeration as preview.
+    terrainSettings: normalizeTerrainSettings(window.playbackState?.terrain?.settings),
+    // end F-69
     photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
     photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
   };
@@ -3353,6 +3658,9 @@ function createPreviewSnapshot(playbackState) {
   return {
     adaptiveStrength: playbackState.camera.adaptiveStrength,
     cameraMode: playbackState.camera.mode,
+    // F-69: snapshot terrain settings so export/reset restores the same exaggerated terrain state.
+    terrainSettings: normalizeTerrainSettings(playbackState.terrain.settings),
+    // end F-69
     currentTimestamp: playbackState.currentTimestamp,
     isPlaying: playbackState.isPlaying,
     overlayVisibility: normalizeOverlayVisibilityState(
@@ -3370,13 +3678,13 @@ function createPreviewSnapshot(playbackState) {
   };
 }
 
-function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
+async function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   if (!previewSnapshot) {
     return;
   }
 
   playbackState.export.cancelRequested = false;
-  applyRendererSettings(playbackState, previewSnapshot, {
+  applyRendererSettings(viewer, playbackState, previewSnapshot, {
     resetCameraSmoothing: true,
     syncControls: true,
   });
@@ -3389,6 +3697,9 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
     ? previewSnapshot.speedGaugePeakTimestamp
     : previewSnapshot.currentTimestamp;
   playbackState.isPlaying = false;
+  await refreshTerrainRouteGeometry(viewer, playbackState, {
+    updateTimelineState: false,
+  });
   setPlaybackTimestamp(viewer, playbackState, previewSnapshot.currentTimestamp);
 
   if (previewSnapshot.isPlaying) {
@@ -3396,11 +3707,15 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   }
 }
 
-function applyRendererSettings(playbackState, settings, options = {}) {
+function applyRendererSettings(viewer, playbackState, settings, options = {}) {
   playbackState.speedMultiplier = settings.speedMultiplier;
   playbackState.camera.mode = settings.cameraMode;
   playbackState.camera.adaptiveStrength = settings.adaptiveStrength;
   playbackState.camera.settings = normalizeCameraSettings(settings.cameraSettings);
+  // F-69: apply shared terrain settings whenever renderer state is restored so preview/export keep the same exaggeration.
+  playbackState.terrain.settings = normalizeTerrainSettings(settings.terrainSettings);
+  applyTerrainSceneSettings(viewer, playbackState.terrain.settings);
+  // end F-69
   playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
     settings.speedGaugeMaxKph,
   );
@@ -3415,6 +3730,7 @@ function applyRendererSettings(playbackState, settings, options = {}) {
   if (options.syncControls) {
     syncOverlayControls(playbackState);
     syncCameraSettingsControls(playbackState);
+    syncTerrainSettingsControls(playbackState);
   }
 
   if (options.applyOverlayVisibility !== false) {
@@ -3528,7 +3844,10 @@ async function settleSceneForCapture(viewer, settings, isCancelled) {
 async function renderExportFrame(viewer, playbackState, payload) {
   stopPlayback(playbackState);
   playbackState.isPlaying = false;
-  applyRendererSettings(playbackState, payload.settings);
+  applyRendererSettings(viewer, playbackState, payload.settings);
+  await refreshTerrainRouteGeometry(viewer, playbackState, {
+    updateTimelineState: false,
+  });
   await applyRendererFrame(
     viewer,
     playbackState,
@@ -3567,9 +3886,12 @@ function setupExportRenderBridge(viewer, playbackState) {
 
     playbackState.export.cancelRequested = false;
     setExportSessionState(viewer, true);
-    applyRendererSettings(playbackState, payload.settings, {
+    applyRendererSettings(viewer, playbackState, payload.settings, {
       resetCameraSmoothing: true,
       syncControls: true,
+    });
+    await refreshTerrainRouteGeometry(viewer, playbackState, {
+      updateTimelineState: false,
     });
 
     try {
@@ -3595,9 +3917,9 @@ function setupExportRenderBridge(viewer, playbackState) {
     }
   });
 
-  window.bikeFlyOverApp?.onExportReset(() => {
+  window.bikeFlyOverApp?.onExportReset(async () => {
     setExportSessionState(viewer, false);
-    restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
+    await restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
     void updateMediaPreviewOverlay(playbackState);
     exportBridgeState.previewSnapshot = null;
   });
@@ -3637,9 +3959,14 @@ async function initializeApp() {
       speedMultiplier: EXPORT_OPTIONS.defaults.speedMultiplier,
       cameraMode: EXPORT_OPTIONS.defaults.cameraMode,
       cameraSettings: EXPORT_OPTIONS.defaults.cameraSettings,
+      // F-69: seed playback with shared terrain defaults so terrain exaggeration is identical in preview/export.
+      terrainSettings: EXPORT_OPTIONS.defaults.terrainSettings,
+      // end F-69
     });
+    await initializeViewerTerrain(viewer, playbackState);
     const { routeBoundingSphere, routeEntity, routePositions } = addRouteEntities(
       viewer,
+      playbackState,
       sampleTrack,
     );
 
@@ -3666,6 +3993,7 @@ async function initializeApp() {
       updatePlaybackUI(playbackState);
       updateCameraUI(playbackState);
       populateExportControls();
+      syncTerrainSettingsControls(playbackState);
       updateExportUi({
         status: "idle",
         phase: "-",
@@ -3679,6 +4007,7 @@ async function initializeApp() {
       setupMediaLibraryControls(viewer, sampleTrack);
       setupPlaybackControls(viewer, playbackState);
       setupCameraSettingsControls(viewer, playbackState);
+      setupTerrainControls(viewer, playbackState);
       setupOverlayControls(playbackState);
       setupExportControls();
       startPlayback(viewer, playbackState);

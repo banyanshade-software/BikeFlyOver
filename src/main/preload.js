@@ -7,6 +7,9 @@ const {
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
   EXPORT_SETTINGS_FIELDS,
+  // F-69: expose terrain parameter metadata from shared settings so the renderer can drive one terrain UI/state model.
+  TERRAIN_SETTINGS_FIELDS,
+  // end F-69
   EXPORT_TIMING_MODES,
 } = require("../shared/export");
 const {
@@ -36,6 +39,9 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
         exportSettings: EXPORT_SETTINGS_FIELDS,
         mediaPresentation: MEDIA_PRESENTATION_SETTINGS_FIELDS,
         overlayVisibility: OVERLAY_VISIBILITY_FIELDS,
+        // F-69: surface terrain parameter limits/defaults so preview/export use the same exaggeration settings.
+        terrainSettings: TERRAIN_SETTINGS_FIELDS,
+        // end F-69
       },
       resolutionPresets: EXPORT_RESOLUTION_PRESETS,
       cameraModes: EXPORT_CAMERA_MODES,

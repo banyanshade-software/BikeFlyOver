@@ -87,6 +87,25 @@ const CAMERA_SETTINGS_FIELDS = freezeDefinitionMap({
   },
 });
 
+// F-69: centralize terrain defaults so preview/export share the same exaggeration and ground offset.
+const TERRAIN_SETTINGS_FIELDS = freezeDefinitionMap({
+  exaggeration: {
+    type: "number",
+    default: 1.4,
+    min: 1,
+    max: 4,
+    step: 0.1,
+  },
+  routeOffsetMeters: {
+    type: "number",
+    default: 1.5,
+    min: 0,
+    max: 5,
+    step: 0.5,
+  },
+});
+// end F-69
+
 const EXPORT_SETTINGS_FIELDS = freezeDefinitionMap({
   fps: {
     type: "integer",
@@ -165,6 +184,9 @@ const EXPORT_ENUM_DEFAULTS = Object.freeze({
 
 const OVERLAY_VISIBILITY_DEFAULTS = buildDefaults(OVERLAY_VISIBILITY_FIELDS);
 const CAMERA_SETTINGS_DEFAULTS = buildDefaults(CAMERA_SETTINGS_FIELDS);
+// F-69: expose terrain defaults from one shared source so renderer and export stay aligned.
+const TERRAIN_SETTINGS_DEFAULTS = buildDefaults(TERRAIN_SETTINGS_FIELDS);
+// end F-69
 const EXPORT_SETTINGS_DEFAULTS = buildDefaults(EXPORT_SETTINGS_FIELDS);
 const MEDIA_PRESENTATION_DEFAULTS = buildDefaults(MEDIA_PRESENTATION_SETTINGS_FIELDS);
 
@@ -178,4 +200,8 @@ module.exports = {
   MEDIA_PRESENTATION_SETTINGS_FIELDS,
   OVERLAY_VISIBILITY_DEFAULTS,
   OVERLAY_VISIBILITY_FIELDS,
+  // F-69: export terrain settings metadata so feature code can tag one shared terrain model.
+  TERRAIN_SETTINGS_DEFAULTS,
+  TERRAIN_SETTINGS_FIELDS,
+  // end F-69
 };

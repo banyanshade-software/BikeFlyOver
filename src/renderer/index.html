@@ -159,6 +159,24 @@
               Camera edits apply immediately in preview and are reused during export.
             </p>
           </section>
+          <section class="controls-panel" aria-label="Terrain controls">
+            <h2>Terrain</h2>
+            <dl class="summary-list summary-list--compact">
+              <div>
+                <dt>Status</dt>
+                <dd id="terrainStatus">Loading 3D terrain...</dd>
+              </div>
+            </dl>
+            <div class="field-stack">
+              <label class="field-group" for="terrainExaggerationInput">
+                <span class="field-label">Terrain exaggeration</span>
+                <input id="terrainExaggerationInput" type="number" />
+              </label>
+            </div>
+            <p class="helper-text">
+              Terrain exaggeration affects preview and export. The route stays on or just above the terrain surface.
+            </p>
+          </section>
           <section class="controls-panel" aria-label="Overlay controls">
             <h2>Overlays</h2>
             <div class="field-stack">

@@ -37,6 +37,13 @@
 - Video export settings should preserve user control over resolution and aspect ratio (`landscape`, `square`, `portrait`).
 - Comments should be written in English.
 
+## Feature implementation tagging
+
+- When implementing a specific feature from the matrix/spec, surround each modified JavaScript code block with feature comments using the feature ID.
+- Use the pattern `// F-69: short why` before the feature-specific code and `// end F-69` after it, replacing `F-69` with the actual feature being implemented.
+- The opening comment must include a short explanation of **why** the code was added or changed, not only what it does.
+- Apply this convention to JavaScript code changes only.
+
 ## Relevant MCP/tooling guidance
 
 - If MCP servers are configured for this repository later, prefer a Playwright server first. The product is UI-heavy and visual, so future sessions will benefit most from browser-style automation for import flows, timeline controls, camera settings, export options, and project save/load behavior.

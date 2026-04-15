@@ -13,6 +13,10 @@ const {
   EXPORT_SETTINGS_DEFAULTS,
   EXPORT_SETTINGS_FIELDS,
   OVERLAY_VISIBILITY_DEFAULTS,
+  // F-69: import terrain defaults/limits from shared parameter config so export and preview use one terrain model.
+  TERRAIN_SETTINGS_DEFAULTS,
+  TERRAIN_SETTINGS_FIELDS,
+  // end F-69
 } = require("./parameter-config");
 
 const EXPORT_RESOLUTION_PRESETS = [
@@ -89,6 +93,9 @@ const EXPORT_DEFAULTS = {
   maxFrameRetries: EXPORT_SETTINGS_DEFAULTS.maxFrameRetries,
   speedGaugeMaxKph: EXPORT_SETTINGS_DEFAULTS.speedGaugeMaxKph,
   cameraSettings: CAMERA_SETTINGS_DEFAULTS,
+  // F-69: include terrain defaults in export settings so preview/export share exaggeration and route offset behavior.
+  terrainSettings: TERRAIN_SETTINGS_DEFAULTS,
+  // end F-69
   photoDisplayDurationMs: MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
   enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
@@ -225,6 +232,32 @@ function normalizeCameraSettings(rawCameraSettings = {}) {
   };
 }
 
+// F-69: normalize terrain settings centrally so export and renderer clamp exaggeration the same way.
+function normalizeTerrainSettings(rawTerrainSettings = {}) {
+  const normalizedRouteOffset = Number(
+    rawTerrainSettings.routeOffsetMeters ?? TERRAIN_SETTINGS_DEFAULTS.routeOffsetMeters,
+  );
+
+  return {
+    exaggeration: clamp(
+      normalizePositiveNumber(
+        rawTerrainSettings.exaggeration ?? TERRAIN_SETTINGS_DEFAULTS.exaggeration,
+        "terrainSettings.exaggeration",
+      ),
+      TERRAIN_SETTINGS_FIELDS.exaggeration.min,
+      TERRAIN_SETTINGS_FIELDS.exaggeration.max,
+    ),
+    routeOffsetMeters: clamp(
+      Number.isFinite(normalizedRouteOffset)
+        ? normalizedRouteOffset
+        : TERRAIN_SETTINGS_DEFAULTS.routeOffsetMeters,
+      TERRAIN_SETTINGS_FIELDS.routeOffsetMeters.min,
+      TERRAIN_SETTINGS_FIELDS.routeOffsetMeters.max,
+    ),
+  };
+}
+// end F-69
+
 function normalizeExportSettings(rawSettings = {}) {
   const resolutionId =
     rawSettings.resolutionId || EXPORT_DEFAULTS.resolutionId;
@@ -303,6 +336,9 @@ function normalizeExportSettings(rawSettings = {}) {
     cameraMode,
     speedGaugeMaxKph,
     cameraSettings: normalizeCameraSettings(rawSettings.cameraSettings),
+    // F-69: carry terrain settings through normalized export payloads so export mirrors preview terrain behavior.
+    terrainSettings: normalizeTerrainSettings(rawSettings.terrainSettings),
+    // end F-69
     settleTimeoutMs,
     settleStablePasses,
     maxFrameRetries,
@@ -863,6 +899,10 @@ function formatFrameFileName(frameNumber) {
 
 module.exports = {
   CAMERA_SETTINGS_FIELDS,
+  // F-69: export terrain metadata/helpers so preload and renderer can share the same terrain model.
+  TERRAIN_SETTINGS_FIELDS,
+  normalizeTerrainSettings,
+  // end F-69
   EXPORT_CAMERA_MODES,
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
