@@ -505,7 +505,7 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 138px;
+  width: 100px;
   aspect-ratio: 1;
   border-radius: 50%;
   background:
