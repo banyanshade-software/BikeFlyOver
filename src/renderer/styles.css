@@ -508,6 +508,10 @@ body {
   gap: 0.7rem;
 }
 
+.metric-speedometer-card {
+  justify-items: center;
+}
+
 .metric-gauge-card__header {
   display: flex;
   align-items: end;
@@ -534,6 +538,86 @@ body {
   height: 100%;
   border-radius: 999px;
   background: linear-gradient(90deg, #4ca8ff, #79bdff);
+}
+
+.metric-speedometer {
+  --speedometer-start-angle: -120deg;
+  --speedometer-sweep: 240deg;
+  --speedometer-progress: 0deg;
+  --speedometer-rotation: var(--speedometer-start-angle);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 148px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at center, rgba(7, 18, 29, 0.96) 0 56%, transparent 57%),
+    conic-gradient(
+      from calc(var(--speedometer-start-angle) + 360deg),
+      #4ca8ff 0deg,
+      #79bdff var(--speedometer-progress),
+      rgba(20, 41, 61, 0.94) var(--speedometer-progress),
+      rgba(20, 41, 61, 0.94) var(--speedometer-sweep),
+      transparent var(--speedometer-sweep) 360deg
+    );
+  border: 1px solid rgba(121, 189, 255, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(121, 189, 255, 0.08);
+}
+
+.metric-speedometer::before {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(121, 189, 255, 0.14);
+}
+
+.metric-speedometer__center {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 0.2rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.metric-speedometer__value {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #f4f8fb;
+}
+
+.metric-speedometer__needle {
+  position: absolute;
+  left: calc(50% - 1.5px);
+  bottom: 50%;
+  z-index: 3;
+  width: 3px;
+  height: 35%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #f4f8fb, #9dcfff);
+  box-shadow: 0 0 12px rgba(157, 207, 255, 0.28);
+  transform: rotate(var(--speedometer-rotation));
+  transform-origin: bottom center;
+}
+
+.metric-speedometer__cap {
+  position: absolute;
+  z-index: 4;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #f4f8fb;
+  box-shadow: 0 0 0 3px rgba(12, 31, 48, 0.96);
+}
+
+.metric-speedometer__scale {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  font-size: 0.82rem;
+  color: #b8d8f6;
 }
 
 .metric-gauge__fill--heart-green {

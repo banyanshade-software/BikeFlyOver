@@ -11,6 +11,7 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     settleTimeoutMs: 15000,
     settleStablePasses: 2,
     maxFrameRetries: 1,
+    speedGaugeMaxKph: 60,
     photoDisplayDurationMs: 5000,
     photoKenBurnsEnabled: true,
     enterDurationMs: 500,
@@ -34,6 +35,7 @@ const RENDER_MODE =
 const exportUiState = {
   isExporting: false,
 };
+const SPEEDOMETER_PEAK_DECAY_KPH_PER_SECOND = 0.8;
 
 const mediaLibraryState = {
   isImporting: false,
@@ -164,12 +166,59 @@ function normalizeOverlayVisibilityState(rawVisibility = {}) {
   }, {});
 }
 
+function normalizeSpeedGaugeMaxKph(value) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? 60;
+  }
+
+  return parsed;
+}
+
+function updateSpeedometerPeak(playbackState, currentSpeedKph) {
+  const normalizedCurrentSpeedKph = Number.isFinite(currentSpeedKph)
+    ? Math.max(0, currentSpeedKph)
+    : 0;
+  const previousPeakKph = Number.isFinite(playbackState.ui.speedGaugePeakKph)
+    ? Math.max(0, playbackState.ui.speedGaugePeakKph)
+    : 0;
+  const previousTimestamp = Number.isFinite(playbackState.ui.speedGaugePeakTimestamp)
+    ? playbackState.ui.speedGaugePeakTimestamp
+    : playbackState.currentTimestamp;
+
+  if (playbackState.currentTimestamp < previousTimestamp) {
+    playbackState.ui.speedGaugePeakKph = normalizedCurrentSpeedKph;
+    playbackState.ui.speedGaugePeakTimestamp = playbackState.currentTimestamp;
+    return normalizedCurrentSpeedKph;
+  }
+
+  const elapsedSeconds = Math.max(
+    0,
+    (playbackState.currentTimestamp - previousTimestamp) / 1000,
+  );
+  const decayedPeakKph = Math.max(
+    0,
+    previousPeakKph - elapsedSeconds * SPEEDOMETER_PEAK_DECAY_KPH_PER_SECOND,
+  );
+  const nextPeakKph = Math.max(normalizedCurrentSpeedKph, decayedPeakKph);
+
+  playbackState.ui.speedGaugePeakKph = nextPeakKph;
+  playbackState.ui.speedGaugePeakTimestamp = playbackState.currentTimestamp;
+
+  return nextPeakKph;
+}
+
 function syncOverlayControls(playbackState) {
   const overlayVisibility = normalizeOverlayVisibilityState(
     playbackState.ui.overlayVisibility,
   );
+  const speedGaugeMaxInput = document.getElementById("overlaySpeedGaugeMaxInput");
 
   playbackState.ui.overlayVisibility = overlayVisibility;
+  playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
+    playbackState.ui.speedGaugeMaxKph,
+  );
 
   for (const component of OVERLAY_COMPONENT_DEFINITIONS) {
     const checkbox = document.getElementById(component.checkboxId);
@@ -177,6 +226,10 @@ function syncOverlayControls(playbackState) {
     if (checkbox instanceof HTMLInputElement) {
       checkbox.checked = overlayVisibility[component.key];
     }
+  }
+
+  if (speedGaugeMaxInput instanceof HTMLInputElement) {
+    speedGaugeMaxInput.value = String(playbackState.ui.speedGaugeMaxKph);
   }
 }
 
@@ -1183,11 +1236,6 @@ function renderSummary(sampleTrack) {
 function createPlaybackState(trackpoints, options = {}) {
   const startTimestamp = trackpoints[0].timestamp;
   const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
-  const trackPeakSpeed = trackpoints.reduce((peakSpeed, trackpoint) => {
-    return Number.isFinite(trackpoint.speed)
-      ? Math.max(peakSpeed, trackpoint.speed)
-      : peakSpeed;
-  }, 0);
 
   return {
     trackpoints,
@@ -1206,7 +1254,6 @@ function createPlaybackState(trackpoints, options = {}) {
     currentSamplePosition: null,
     playedRoutePositionsScratch: [],
     routePositions: [],
-    trackPeakSpeed,
     camera: {
       mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
       adaptiveStrength:
@@ -1225,6 +1272,11 @@ function createPlaybackState(trackpoints, options = {}) {
       overlayVisibility: normalizeOverlayVisibilityState(
         options.overlayVisibility ?? EXPORT_OPTIONS.defaults.overlayVisibility,
       ),
+      speedGaugeMaxKph: normalizeSpeedGaugeMaxKph(
+        options.speedGaugeMaxKph ?? EXPORT_OPTIONS.defaults.speedGaugeMaxKph,
+      ),
+      speedGaugePeakKph: 0,
+      speedGaugePeakTimestamp: startTimestamp,
     },
   };
 }
@@ -2185,7 +2237,7 @@ function updatePlaybackUI(playbackState) {
 }
 
 function updateMetricOverlay(playbackState) {
-  const speedGaugeFill = document.getElementById("metricOverlaySpeedGaugeFill");
+  const speedGaugeDial = document.getElementById("metricOverlaySpeedGaugeDial");
   const heartRateGaugeCard = document.getElementById("metricOverlayHeartRateGaugeCard");
   const heartRateGaugeFill = document.getElementById("metricOverlayHeartRateGaugeFill");
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
@@ -2193,11 +2245,22 @@ function updateMetricOverlay(playbackState) {
   const speedMetersPerSecond = playbackState.currentSample.speed;
   const heartRate = playbackState.currentSample.heartRate;
   const heartRateGaugeState = getHeartRateGaugeState(heartRate);
-  const trackPeakSpeed = playbackState.trackPeakSpeed || 0;
+  const speedKph = Number.isFinite(speedMetersPerSecond)
+    ? speedMetersPerSecond * 3.6
+    : Number.NaN;
+  const speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(playbackState.ui.speedGaugeMaxKph);
+  const speedGaugePeakKph = updateSpeedometerPeak(playbackState, speedKph);
   const speedGaugeRatio =
-    Number.isFinite(speedMetersPerSecond) && trackPeakSpeed > 0
-      ? Math.min(1, Math.max(0, speedMetersPerSecond / trackPeakSpeed))
+    Number.isFinite(speedKph) && speedGaugeMaxKph > 0
+      ? Math.min(1, Math.max(0, speedKph / speedGaugeMaxKph))
       : 0;
+  const speedGaugePeakRatio =
+    Number.isFinite(speedGaugePeakKph) && speedGaugeMaxKph > 0
+      ? Math.min(1, Math.max(0, speedGaugePeakKph / speedGaugeMaxKph))
+      : 0;
+  const speedometerSweepDegrees = 240;
+  const speedometerRotationDegrees = -120 + speedGaugeRatio * speedometerSweepDegrees;
+  const speedometerProgressDegrees = speedGaugePeakRatio * speedometerSweepDegrees;
 
   setTextContent("metricOverlayTime", formatDuration(elapsedMs));
   setTextContent(
@@ -2218,14 +2281,23 @@ function updateMetricOverlay(playbackState) {
   );
   setTextContent("metricOverlayProgress", formatProgress(progressRatio));
   setTextContent(
+    "metricOverlaySpeedGaugeMax",
+    `${Math.round(speedGaugeMaxKph)} km/h`,
+  );
+  setTextContent(
     "metricOverlaySpeedGaugeMeta",
-    trackPeakSpeed > 0
-      ? `${Math.round(speedGaugeRatio * 100)}% of current ride peak`
-      : "No speed data available",
+    `Peak hold ${speedGaugePeakKph.toFixed(1)} km/h`,
   );
 
-  if (speedGaugeFill instanceof HTMLElement) {
-    speedGaugeFill.style.width = `${Math.round(speedGaugeRatio * 100)}%`;
+  if (speedGaugeDial instanceof HTMLElement) {
+    speedGaugeDial.style.setProperty(
+      "--speedometer-progress",
+      `${speedometerProgressDegrees}deg`,
+    );
+    speedGaugeDial.style.setProperty(
+      "--speedometer-rotation",
+      `${speedometerRotationDegrees}deg`,
+    );
   }
 
   if (heartRateGaugeFill instanceof HTMLElement) {
@@ -2480,6 +2552,7 @@ function setupPlaybackControls(viewer, playbackState) {
 function setupOverlayControls(playbackState) {
   syncOverlayControls(playbackState);
   applyOverlayVisibility(playbackState);
+  const speedGaugeMaxInput = document.getElementById("overlaySpeedGaugeMaxInput");
 
   for (const component of OVERLAY_COMPONENT_DEFINITIONS) {
     const checkbox = document.getElementById(component.checkboxId);
@@ -2498,6 +2571,29 @@ function setupOverlayControls(playbackState) {
       applyOverlayVisibility(playbackState);
     });
   }
+
+  speedGaugeMaxInput?.addEventListener("input", (event) => {
+    const target = event.currentTarget;
+
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(target.value);
+    updateMetricOverlay(playbackState);
+  });
+
+  speedGaugeMaxInput?.addEventListener("change", (event) => {
+    const target = event.currentTarget;
+
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(target.value);
+    target.value = String(playbackState.ui.speedGaugeMaxKph);
+    updateMetricOverlay(playbackState);
+  });
 }
 
 function populateSelect(selectElement, items, selectedId) {
@@ -2835,6 +2931,7 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("overlayMetricChipsCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayHeartRateGaugeCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlaySpeedGaugeMaxInput", exportUiState.isExporting);
   setElementDisabled(
     "importMediaButton",
     exportUiState.isExporting || mediaLibraryState.isImporting,
@@ -2880,6 +2977,9 @@ function readExportSettings() {
     mediaItems: mediaLibraryState.items,
     overlayVisibility: normalizeOverlayVisibilityState(
       window.playbackState?.ui?.overlayVisibility,
+    ),
+    speedGaugeMaxKph: normalizeSpeedGaugeMaxKph(
+      window.playbackState?.ui?.speedGaugeMaxKph,
     ),
     photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
     photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
@@ -2970,6 +3070,13 @@ function createPreviewSnapshot(playbackState) {
     overlayVisibility: normalizeOverlayVisibilityState(
       playbackState.ui.overlayVisibility,
     ),
+    speedGaugeMaxKph: normalizeSpeedGaugeMaxKph(playbackState.ui.speedGaugeMaxKph),
+    speedGaugePeakKph: Number.isFinite(playbackState.ui.speedGaugePeakKph)
+      ? playbackState.ui.speedGaugePeakKph
+      : 0,
+    speedGaugePeakTimestamp: Number.isFinite(playbackState.ui.speedGaugePeakTimestamp)
+      ? playbackState.ui.speedGaugePeakTimestamp
+      : playbackState.currentTimestamp,
     speedMultiplier: playbackState.speedMultiplier,
   };
 }
@@ -2986,6 +3093,17 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
     previewSnapshot.overlayVisibility,
   );
+  playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
+    previewSnapshot.speedGaugeMaxKph,
+  );
+  playbackState.ui.speedGaugePeakKph = Number.isFinite(previewSnapshot.speedGaugePeakKph)
+    ? previewSnapshot.speedGaugePeakKph
+    : 0;
+  playbackState.ui.speedGaugePeakTimestamp = Number.isFinite(
+    previewSnapshot.speedGaugePeakTimestamp,
+  )
+    ? previewSnapshot.speedGaugePeakTimestamp
+    : previewSnapshot.currentTimestamp;
   playbackState.isPlaying = false;
   resetFollowCameraSmoothing(playbackState);
   syncOverlayControls(playbackState);
@@ -3075,6 +3193,9 @@ async function renderExportFrame(viewer, playbackState, payload) {
   playbackState.speedMultiplier = payload.settings.speedMultiplier;
   playbackState.camera.mode = payload.settings.cameraMode;
   playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
+  playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
+    payload.settings.speedGaugeMaxKph,
+  );
   playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
     payload.settings.overlayVisibility,
   );
@@ -3119,6 +3240,9 @@ function setupExportRenderBridge(viewer, playbackState) {
     playbackState.speedMultiplier = payload.settings.speedMultiplier;
     playbackState.camera.mode = payload.settings.cameraMode;
     playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
+    playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
+      payload.settings.speedGaugeMaxKph,
+    );
     playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
       payload.settings.overlayVisibility,
     );

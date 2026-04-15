@@ -141,6 +141,16 @@
                 <input id="overlayHeartRateGaugeCheckbox" type="checkbox" checked />
                 <span>Show heart rate gauge</span>
               </label>
+              <label class="field-group" for="overlaySpeedGaugeMaxInput">
+                <span class="field-label">Speedometer max speed (km/h)</span>
+                <input
+                  id="overlaySpeedGaugeMaxInput"
+                  type="number"
+                  min="10"
+                  step="5"
+                  value="60"
+                />
+              </label>
             </div>
             <p class="helper-text">
               Preview and exported video use the same overlay visibility choices.
@@ -323,22 +333,27 @@
             >
               <article
                 id="metricOverlaySpeedGaugeCard"
-                class="metric-gauge-card"
+                class="metric-gauge-card metric-speedometer-card"
                 aria-label="Speed gauge"
               >
-                <div class="metric-gauge-card__header">
-                  <span class="metric-chip__label">Speed</span>
-                  <span id="metricOverlaySpeed" class="metric-gauge-card__value">N/A</span>
+                <div
+                  id="metricOverlaySpeedGaugeDial"
+                  class="metric-speedometer"
+                  style="--speedometer-progress: 0deg; --speedometer-rotation: -120deg;"
+                >
+                  <div id="metricOverlaySpeedGaugeNeedle" class="metric-speedometer__needle"></div>
+                  <div class="metric-speedometer__cap"></div>
+                  <div class="metric-speedometer__center">
+                    <span class="metric-chip__label">Speed</span>
+                    <span id="metricOverlaySpeed" class="metric-speedometer__value">N/A</span>
+                  </div>
                 </div>
-                <div class="metric-gauge">
-                  <div
-                    id="metricOverlaySpeedGaugeFill"
-                    class="metric-gauge__fill"
-                    style="width: 0%;"
-                  ></div>
+                <div class="metric-speedometer__scale">
+                  <span>0</span>
+                  <span id="metricOverlaySpeedGaugeMax">60 km/h</span>
                 </div>
                 <p id="metricOverlaySpeedGaugeMeta" class="metric-gauge-card__meta">
-                  0% of current ride peak
+                  Peak hold 0.0 km/h
                 </p>
               </article>
               <article

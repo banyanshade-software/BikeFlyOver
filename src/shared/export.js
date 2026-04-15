@@ -81,6 +81,7 @@ const EXPORT_DEFAULTS = {
   settleTimeoutMs: 15000,
   settleStablePasses: 2,
   maxFrameRetries: 1,
+  speedGaugeMaxKph: 60,
   photoDisplayDurationMs: MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
   enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
@@ -180,6 +181,10 @@ function normalizeExportSettings(rawSettings = {}) {
   )
     ? rawSettings.cameraMode
     : EXPORT_DEFAULTS.cameraMode;
+  const speedGaugeMaxKph = normalizePositiveNumber(
+    rawSettings.speedGaugeMaxKph ?? EXPORT_DEFAULTS.speedGaugeMaxKph,
+    "speedGaugeMaxKph",
+  );
 
   return {
     resolutionId,
@@ -190,6 +195,7 @@ function normalizeExportSettings(rawSettings = {}) {
     speedMultiplier,
     adaptiveStrength,
     cameraMode,
+    speedGaugeMaxKph,
     settleTimeoutMs,
     settleStablePasses,
     maxFrameRetries,
