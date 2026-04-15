@@ -35,7 +35,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-11 |v3  | Timeline | Add frame-accurate stepping controls for export review | Helps verify key camera and media moments | Not implemented |
 | F-12 |v3  | Timeline | Add playback loop/range preview for selected sections | Useful for editing and export iteration | Not implemented |
 | F-13 | v3 | Camera | Add first-person camera mode | Required by the spec | Not implemented |
-| F-14 | v2 | Camera | Add editable camera altitude / distance / pitch / motion parameters | Required by the GUI spec | Not implemented |
+| F-14 | v2 | Camera | Add editable camera altitude / distance / pitch / motion parameters | Required by the GUI spec | Implemented |
 | F-15 |v3  | Camera | Add predefined camera moves at selected points (orbit, rotate around point, cinematic transition) | Required by the application overview | Not implemented |
 | F-16 |v3  | Camera | Add keyframe-based camera authoring on the route timeline | Enables repeatable custom fly-over behavior | Not implemented |
 | F-17 |v3  | Camera | Stabilize and refine follow-camera behavior for long tracks and sharp turns | Mentioned as a risk and improves export quality | Partial |

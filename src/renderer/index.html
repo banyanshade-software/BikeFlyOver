@@ -121,6 +121,49 @@
                 <dd id="cameraModeStatus">Loading...</dd>
               </div>
             </dl>
+            <div class="field-stack">
+              <label class="field-group" for="cameraFollowDistanceInput">
+                <span class="field-label">Follow distance (m)</span>
+                <input id="cameraFollowDistanceInput" type="number" min="80" max="800" step="5" />
+              </label>
+              <label class="field-group" for="cameraFollowAltitudeInput">
+                <span class="field-label">Follow altitude offset (m)</span>
+                <input id="cameraFollowAltitudeInput" type="number" min="2" max="120" step="1" />
+              </label>
+              <label class="field-group" for="cameraFollowPitchInput">
+                <span class="field-label">Follow pitch (deg)</span>
+                <input id="cameraFollowPitchInput" type="number" min="15" max="85" step="1" />
+              </label>
+              <label class="field-group" for="cameraLookAheadDistanceInput">
+                <span class="field-label">Look-ahead distance (m)</span>
+                <input id="cameraLookAheadDistanceInput" type="number" min="10" max="200" step="1" />
+              </label>
+              <label class="field-group" for="cameraLookAheadWindowInput">
+                <span class="field-label">Look-ahead window (points)</span>
+                <input id="cameraLookAheadWindowInput" type="number" min="2" max="60" step="1" />
+              </label>
+              <label class="field-group" for="cameraSmoothingStrengthInput">
+                <span class="field-label">Smoothing strength</span>
+                <input id="cameraSmoothingStrengthInput" type="number" min="0.25" max="3" step="0.05" />
+              </label>
+              <label class="field-group" for="cameraOverviewPitchInput">
+                <span class="field-label">Overview pitch (deg)</span>
+                <input id="cameraOverviewPitchInput" type="number" min="20" max="85" step="1" />
+              </label>
+              <label class="field-group" for="cameraOverviewRangeMultiplierInput">
+                <span class="field-label">Overview range multiplier</span>
+                <input
+                  id="cameraOverviewRangeMultiplierInput"
+                  type="number"
+                  min="1"
+                  max="6"
+                  step="0.1"
+                />
+              </label>
+            </div>
+            <p class="helper-text">
+              Camera edits apply immediately in preview and are reused during export.
+            </p>
           </section>
           <section class="controls-panel" aria-label="Overlay controls">
             <h2>Overlays</h2>

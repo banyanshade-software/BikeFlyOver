@@ -12,6 +12,16 @@ const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.() || {
     settleStablePasses: 2,
     maxFrameRetries: 1,
     speedGaugeMaxKph: 40,
+    cameraSettings: {
+      followDistanceMeters: 260,
+      followAltitudeOffsetMeters: 18,
+      followPitchDegrees: 52,
+      lookAheadDistanceMeters: 42,
+      lookAheadPointWindow: 12,
+      smoothingStrength: 1,
+      overviewPitchDegrees: 55,
+      overviewRangeMultiplier: 2.8,
+    },
     photoDisplayDurationMs: 5000,
     photoKenBurnsEnabled: true,
     enterDurationMs: 500,
@@ -202,6 +212,97 @@ function normalizeSpeedGaugeMaxKph(value) {
   }
 
   return parsed;
+}
+
+function clampNumber(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function normalizeCameraSettings(rawCameraSettings = {}) {
+  const defaultCameraSettings = EXPORT_OPTIONS.defaults?.cameraSettings || {};
+  const getFiniteNumber = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+  const getFiniteInteger = (value, fallback) => {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
+
+  return {
+    followDistanceMeters: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.followDistanceMeters,
+        defaultCameraSettings.followDistanceMeters ?? 260,
+      ),
+      80,
+      800,
+    ),
+    followAltitudeOffsetMeters: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.followAltitudeOffsetMeters,
+        defaultCameraSettings.followAltitudeOffsetMeters ?? 18,
+      ),
+      2,
+      120,
+    ),
+    followPitchDegrees: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.followPitchDegrees,
+        defaultCameraSettings.followPitchDegrees ?? 52,
+      ),
+      15,
+      85,
+    ),
+    lookAheadDistanceMeters: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.lookAheadDistanceMeters,
+        defaultCameraSettings.lookAheadDistanceMeters ?? 42,
+      ),
+      10,
+      200,
+    ),
+    lookAheadPointWindow: clampNumber(
+      getFiniteInteger(
+        rawCameraSettings.lookAheadPointWindow,
+        defaultCameraSettings.lookAheadPointWindow ?? 12,
+      ),
+      2,
+      60,
+    ),
+    smoothingStrength: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.smoothingStrength,
+        defaultCameraSettings.smoothingStrength ?? 1,
+      ),
+      0.25,
+      3,
+    ),
+    overviewPitchDegrees: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.overviewPitchDegrees,
+        defaultCameraSettings.overviewPitchDegrees ?? 55,
+      ),
+      20,
+      85,
+    ),
+    overviewRangeMultiplier: clampNumber(
+      getFiniteNumber(
+        rawCameraSettings.overviewRangeMultiplier,
+        defaultCameraSettings.overviewRangeMultiplier ?? 2.8,
+      ),
+      1,
+      6,
+    ),
+  };
+}
+
+function setNumericInputValue(elementId, value) {
+  const element = document.getElementById(elementId);
+
+  if (element instanceof HTMLInputElement && Number.isFinite(value)) {
+    element.value = String(value);
+  }
 }
 
 function updateSpeedometerPeak(playbackState, currentSpeedKph) {
@@ -1302,6 +1403,9 @@ function createPlaybackState(trackpoints, options = {}) {
       mode: options.cameraMode ?? EXPORT_OPTIONS.defaults.cameraMode,
       adaptiveStrength:
         options.adaptiveStrength ?? EXPORT_OPTIONS.defaults.adaptiveStrength,
+      settings: normalizeCameraSettings(
+        options.cameraSettings ?? EXPORT_OPTIONS.defaults.cameraSettings,
+      ),
       smoothedFocus: null,
       smoothedHeading: null,
       routeBoundingSphere: null,
@@ -1529,6 +1633,49 @@ function updateCameraUI(playbackState) {
   );
 }
 
+function syncCameraSettingsControls(playbackState) {
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
+
+  playbackState.camera.settings = cameraSettings;
+
+  setNumericInputValue("cameraFollowDistanceInput", cameraSettings.followDistanceMeters);
+  setNumericInputValue(
+    "cameraFollowAltitudeInput",
+    cameraSettings.followAltitudeOffsetMeters,
+  );
+  setNumericInputValue("cameraFollowPitchInput", cameraSettings.followPitchDegrees);
+  setNumericInputValue(
+    "cameraLookAheadDistanceInput",
+    cameraSettings.lookAheadDistanceMeters,
+  );
+  setNumericInputValue(
+    "cameraLookAheadWindowInput",
+    cameraSettings.lookAheadPointWindow,
+  );
+  setNumericInputValue(
+    "cameraSmoothingStrengthInput",
+    cameraSettings.smoothingStrength,
+  );
+  setNumericInputValue(
+    "cameraOverviewPitchInput",
+    cameraSettings.overviewPitchDegrees,
+  );
+  setNumericInputValue(
+    "cameraOverviewRangeMultiplierInput",
+    cameraSettings.overviewRangeMultiplier,
+  );
+}
+
+function applyCameraSettingsChange(viewer, playbackState, nextPartialSettings = {}) {
+  playbackState.camera.settings = normalizeCameraSettings({
+    ...playbackState.camera.settings,
+    ...nextPartialSettings,
+  });
+  resetFollowCameraSmoothing(playbackState);
+  syncCameraSettingsControls(playbackState);
+  syncPlaybackState(viewer, playbackState);
+}
+
 function toRouteDisplayPosition(Cesium, trackpoint) {
   return Cesium.Cartesian3.fromDegrees(
     trackpoint.longitude,
@@ -1540,6 +1687,7 @@ function toRouteDisplayPosition(Cesium, trackpoint) {
 function setOverviewCamera(viewer, playbackState) {
   const Cesium = window.Cesium;
   const { routeBoundingSphere } = playbackState.camera;
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
 
   if (!routeBoundingSphere) {
     return;
@@ -1549,21 +1697,35 @@ function setOverviewCamera(viewer, playbackState) {
     routeBoundingSphere,
     new Cesium.HeadingPitchRange(
       0,
-      Cesium.Math.toRadians(-55),
-      Math.max(routeBoundingSphere.radius * 2.8, 1800),
+      Cesium.Math.toRadians(-cameraSettings.overviewPitchDegrees),
+      Math.max(
+        routeBoundingSphere.radius * cameraSettings.overviewRangeMultiplier,
+        1800,
+      ),
     ),
   );
   viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
 }
 
-function getLookAheadTrackIndex(playbackState, lookAheadPointCount = 12) {
+function getLookAheadTrackIndex(playbackState, lookAheadPointCount) {
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
+  const safeLookAheadPointCount = Number.isFinite(lookAheadPointCount)
+    ? lookAheadPointCount
+    : cameraSettings.lookAheadPointWindow;
+
   return Math.min(
-    playbackState.currentIndex + lookAheadPointCount,
+    playbackState.currentIndex + safeLookAheadPointCount,
     playbackState.trackpoints.length - 1,
   );
 }
 
 function getFollowCameraLookAheadTargets(Cesium, playbackState, currentPosition) {
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
+  const nearDistanceThreshold = Math.max(
+    4,
+    cameraSettings.lookAheadDistanceMeters * 0.45,
+  );
+  const farDistanceThreshold = cameraSettings.lookAheadDistanceMeters;
   const targets = {
     nearPosition: null,
     farPosition: null,
@@ -1585,11 +1747,11 @@ function getFollowCameraLookAheadTargets(Cesium, playbackState, currentPosition)
       candidatePosition,
     );
 
-    if (!targets.nearPosition && candidateDistance >= 18) {
+    if (!targets.nearPosition && candidateDistance >= nearDistanceThreshold) {
       targets.nearPosition = candidatePosition;
     }
 
-    if (candidateDistance >= 42) {
+    if (candidateDistance >= farDistanceThreshold) {
       targets.farPosition = candidatePosition;
       break;
     }
@@ -1648,8 +1810,9 @@ function analyzeFollowCameraManeuver(
   currentPosition,
   inverseTransform,
 ) {
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
   const lookAheadLimit = Math.min(
-    playbackState.currentIndex + 24,
+    playbackState.currentIndex + cameraSettings.lookAheadPointWindow,
     playbackState.routePositions.length - 1,
   );
   let previousHeading = null;
@@ -1869,6 +2032,8 @@ function updateSmoothedFollowCameraState(
   useSmoothing,
   maneuverAnalysis,
 ) {
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
+
   if (!useSmoothing || !playbackState.camera.smoothedFocus) {
     playbackState.camera.smoothedFocus = Cesium.Cartesian3.clone(desiredFocus);
     playbackState.camera.smoothedHeading = desiredHeading;
@@ -1900,8 +2065,15 @@ function updateSmoothedFollowCameraState(
     1,
   );
   const stabilityBias = maneuverAnalysis?.stabilityBias ?? 0;
-  const focusResponsiveness = Cesium.Math.lerp(0.24, 0.1, stabilityBias);
-  const headingResponsiveness = Cesium.Math.lerp(0.28, 0.08, stabilityBias);
+  const smoothingStrength = Cesium.Math.clamp(
+    cameraSettings.smoothingStrength,
+    0.25,
+    3,
+  );
+  const focusResponsiveness =
+    Cesium.Math.lerp(0.24, 0.1, stabilityBias) / smoothingStrength;
+  const headingResponsiveness =
+    Cesium.Math.lerp(0.28, 0.08, stabilityBias) / smoothingStrength;
 
   Cesium.Cartesian3.lerp(
     playbackState.camera.smoothedFocus,
@@ -1928,6 +2100,7 @@ function updateSmoothedFollowCameraState(
 function updateFollowCamera(viewer, playbackState, options = {}) {
   const Cesium = window.Cesium;
   const useSmoothing = options.useSmoothing ?? true;
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
 
   if (playbackState.camera.mode !== "follow") {
     return;
@@ -1976,7 +2149,7 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
     currentPosition,
     Cesium.Cartesian3.multiplyByScalar(
       up,
-      Cesium.Math.lerp(8, 42, elevatedComplexity),
+      cameraSettings.followAltitudeOffsetMeters,
       new Cesium.Cartesian3(),
     ),
     new Cesium.Cartesian3(),
@@ -2031,10 +2204,8 @@ function updateFollowCamera(viewer, playbackState, options = {}) {
   }
 
   const heading = playbackState.camera.smoothedHeading;
-  const pitch = Cesium.Math.toRadians(
-    Cesium.Math.lerp(-45, -68, elevatedComplexity),
-  );
-  const range = Cesium.Math.lerp(190, 390, elevatedComplexity);
+  const pitch = Cesium.Math.toRadians(-cameraSettings.followPitchDegrees);
+  const range = cameraSettings.followDistanceMeters;
   const localOffset = new Cesium.Cartesian3(
     -Math.sin(heading) * Math.cos(pitch) * range,
     -Math.cos(heading) * Math.cos(pitch) * range,
@@ -2589,6 +2760,49 @@ function setupPlaybackControls(viewer, playbackState) {
   }
 }
 
+function setupCameraSettingsControls(viewer, playbackState) {
+  const fieldDefinitions = [
+    ["cameraFollowDistanceInput", "followDistanceMeters"],
+    ["cameraFollowAltitudeInput", "followAltitudeOffsetMeters"],
+    ["cameraFollowPitchInput", "followPitchDegrees"],
+    ["cameraLookAheadDistanceInput", "lookAheadDistanceMeters"],
+    ["cameraLookAheadWindowInput", "lookAheadPointWindow"],
+    ["cameraSmoothingStrengthInput", "smoothingStrength"],
+    ["cameraOverviewPitchInput", "overviewPitchDegrees"],
+    ["cameraOverviewRangeMultiplierInput", "overviewRangeMultiplier"],
+  ];
+
+  syncCameraSettingsControls(playbackState);
+
+  for (const [elementId, settingKey] of fieldDefinitions) {
+    const input = document.getElementById(elementId);
+
+    input?.addEventListener("input", (event) => {
+      const target = event.currentTarget;
+
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      applyCameraSettingsChange(viewer, playbackState, {
+        [settingKey]: target.value,
+      });
+    });
+
+    input?.addEventListener("change", (event) => {
+      const target = event.currentTarget;
+
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      applyCameraSettingsChange(viewer, playbackState, {
+        [settingKey]: target.value,
+      });
+    });
+  }
+}
+
 function setupOverlayControls(playbackState) {
   syncOverlayControls(playbackState);
   applyOverlayVisibility(playbackState);
@@ -2965,6 +3179,15 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("exportSpeedInput", exportUiState.isExporting);
   setElementDisabled("exportAdaptiveStrengthInput", exportUiState.isExporting);
   setElementDisabled("exportCameraModeSelect", exportUiState.isExporting);
+  setElementDisabled("cameraModeButton", exportUiState.isExporting);
+  setElementDisabled("cameraFollowDistanceInput", exportUiState.isExporting);
+  setElementDisabled("cameraFollowAltitudeInput", exportUiState.isExporting);
+  setElementDisabled("cameraFollowPitchInput", exportUiState.isExporting);
+  setElementDisabled("cameraLookAheadDistanceInput", exportUiState.isExporting);
+  setElementDisabled("cameraLookAheadWindowInput", exportUiState.isExporting);
+  setElementDisabled("cameraSmoothingStrengthInput", exportUiState.isExporting);
+  setElementDisabled("cameraOverviewPitchInput", exportUiState.isExporting);
+  setElementDisabled("cameraOverviewRangeMultiplierInput", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
@@ -3024,6 +3247,7 @@ function readExportSettings() {
     speedGaugeMaxKph: normalizeSpeedGaugeMaxKph(
       window.playbackState?.ui?.speedGaugeMaxKph,
     ),
+    cameraSettings: normalizeCameraSettings(window.playbackState?.camera?.settings),
     photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
     photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
   };
@@ -3114,6 +3338,7 @@ function createPreviewSnapshot(playbackState) {
       playbackState.ui.overlayVisibility,
     ),
     speedGaugeMaxKph: normalizeSpeedGaugeMaxKph(playbackState.ui.speedGaugeMaxKph),
+    cameraSettings: normalizeCameraSettings(playbackState.camera.settings),
     speedGaugePeakKph: Number.isFinite(playbackState.ui.speedGaugePeakKph)
       ? playbackState.ui.speedGaugePeakKph
       : 0,
@@ -3133,6 +3358,7 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   playbackState.speedMultiplier = previewSnapshot.speedMultiplier;
   playbackState.camera.mode = previewSnapshot.cameraMode;
   playbackState.camera.adaptiveStrength = previewSnapshot.adaptiveStrength;
+  playbackState.camera.settings = normalizeCameraSettings(previewSnapshot.cameraSettings);
   playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
     previewSnapshot.overlayVisibility,
   );
@@ -3150,6 +3376,7 @@ function restorePreviewSnapshot(viewer, playbackState, previewSnapshot) {
   playbackState.isPlaying = false;
   resetFollowCameraSmoothing(playbackState);
   syncOverlayControls(playbackState);
+  syncCameraSettingsControls(playbackState);
   applyOverlayVisibility(playbackState);
   setPlaybackTimestamp(viewer, playbackState, previewSnapshot.currentTimestamp);
 
@@ -3236,6 +3463,7 @@ async function renderExportFrame(viewer, playbackState, payload) {
   playbackState.speedMultiplier = payload.settings.speedMultiplier;
   playbackState.camera.mode = payload.settings.cameraMode;
   playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
+  playbackState.camera.settings = normalizeCameraSettings(payload.settings.cameraSettings);
   playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
     payload.settings.speedGaugeMaxKph,
   );
@@ -3283,6 +3511,9 @@ function setupExportRenderBridge(viewer, playbackState) {
     playbackState.speedMultiplier = payload.settings.speedMultiplier;
     playbackState.camera.mode = payload.settings.cameraMode;
     playbackState.camera.adaptiveStrength = payload.settings.adaptiveStrength;
+    playbackState.camera.settings = normalizeCameraSettings(
+      payload.settings.cameraSettings,
+    );
     playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
       payload.settings.speedGaugeMaxKph,
     );
@@ -3290,6 +3521,7 @@ function setupExportRenderBridge(viewer, playbackState) {
       payload.settings.overlayVisibility,
     );
     syncOverlayControls(playbackState);
+    syncCameraSettingsControls(playbackState);
     applyOverlayVisibility(playbackState);
     resetFollowCameraSmoothing(playbackState);
     setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
@@ -3350,6 +3582,7 @@ async function initializeApp() {
       adaptiveStrength: EXPORT_OPTIONS.defaults.adaptiveStrength,
       speedMultiplier: EXPORT_OPTIONS.defaults.speedMultiplier,
       cameraMode: EXPORT_OPTIONS.defaults.cameraMode,
+      cameraSettings: EXPORT_OPTIONS.defaults.cameraSettings,
     });
     const { routeBoundingSphere, routeEntity, routePositions } = addRouteEntities(
       viewer,
@@ -3390,6 +3623,7 @@ async function initializeApp() {
       setupExportRenderBridge(viewer, playbackState);
       setupMediaLibraryControls(viewer, sampleTrack);
       setupPlaybackControls(viewer, playbackState);
+      setupCameraSettingsControls(viewer, playbackState);
       setupOverlayControls(playbackState);
       setupExportControls();
       startPlayback(viewer, playbackState);
