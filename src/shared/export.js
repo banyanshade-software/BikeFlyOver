@@ -84,7 +84,7 @@ const EXPORT_DEFAULTS = {
   settleTimeoutMs: 15000,
   settleStablePasses: 2,
   maxFrameRetries: 1,
-  speedGaugeMaxKph: 60,
+  speedGaugeMaxKph: 40,
   photoDisplayDurationMs: MEDIA_PRESENTATION_DEFAULTS.photoDisplayDurationMs,
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
   enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
