@@ -2329,11 +2329,6 @@ function updateMetricOverlay(playbackState) {
   setTextContent("metricOverlayCadence", formatCadenceValue(cadence));
   setTextContent("metricOverlayTemperature", formatTemperatureValue(temperature));
   setTextContent("metricOverlaySpeed", formatOverlaySpeed(speedMetersPerSecond));
-  setTextContent(
-    "metricOverlaySpeedGaugeMax",
-    `${Math.round(speedGaugeMaxKph)} km/h`,
-  );
-
   if (speedGaugeDial instanceof HTMLElement) {
     speedGaugeDial.style.setProperty(
       "--speedometer-progress",

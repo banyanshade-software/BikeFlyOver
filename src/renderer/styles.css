@@ -505,7 +505,7 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 100px;
+  width: 130px;
   aspect-ratio: 1;
   border-radius: 50%;
   background:
@@ -563,18 +563,10 @@ body {
   position: absolute;
   z-index: 4;
   width: 14px;
-  height: 14px;
+  height: 24px;
   border-radius: 50%;
   background: #f4f8fb;
   box-shadow: 0 0 0 3px rgba(12, 31, 48, 0.96);
-}
-
-.metric-speedometer__scale {
-  display: flex;
-  justify-content: space-between;
-  width: 100%;
-  font-size: 0.82rem;
-  color: #b8d8f6;
 }
 
 .metric-gauge__fill--heart-green {
