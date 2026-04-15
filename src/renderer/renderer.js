@@ -35,7 +35,7 @@ const RENDER_MODE =
 const exportUiState = {
   isExporting: false,
 };
-const SPEEDOMETER_PEAK_DECAY_KPH_PER_SECOND = 0.8;
+const SPEEDOMETER_PEAK_DECAY_KPH_PER_SECOND = 0.2;
 
 const mediaLibraryState = {
   isImporting: false,
