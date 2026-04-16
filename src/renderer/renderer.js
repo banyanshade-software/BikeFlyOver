@@ -1,8 +1,11 @@
 const EXPORT_OPTIONS = window.bikeFlyOverApp?.getExportOptions?.();
+const MEDIA_ALIGNMENT_OPTIONS =
+  window.bikeFlyOverApp?.getMediaAlignmentOptions?.();
 const PARAMETER_CONFIG = EXPORT_OPTIONS?.parameterConfig || {};
 const CAMERA_SETTINGS_FIELDS = PARAMETER_CONFIG.cameraSettings || {};
 const EXPORT_SETTINGS_FIELDS = PARAMETER_CONFIG.exportSettings || {};
 const MEDIA_PRESENTATION_SETTINGS_FIELDS = PARAMETER_CONFIG.mediaPresentation || {};
+const MEDIA_ALIGNMENT_FIELDS = MEDIA_ALIGNMENT_OPTIONS?.parameterConfig || {};
 // F-69: read shared terrain metadata in the renderer so terrain exaggeration stays aligned with export settings.
 const TERRAIN_SETTINGS_FIELDS = PARAMETER_CONFIG.terrainSettings || {};
 const DEFAULT_TERRAIN_PROVIDER_LABEL = "ArcGIS World Elevation";
@@ -20,6 +23,10 @@ const exportUiState = {
 const SPEEDOMETER_PEAK_DECAY_KPH_PER_SECOND = 0.2;
 
 const mediaLibraryState = {
+  alignmentOffsets: MEDIA_ALIGNMENT_OPTIONS?.defaults || {
+    globalOffsetSeconds: 0,
+    deviceClockOffsetSeconds: 0,
+  },
   isImporting: false,
   items: [],
   statusMessage: "No media imported yet.",
@@ -195,9 +202,25 @@ function normalizeSpeedGaugeMaxKph(value) {
   return normalizeConfiguredNumber(
     value,
     definition,
-    EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? definition?.default,
+      EXPORT_OPTIONS.defaults?.speedGaugeMaxKph ?? definition?.default,
   );
 }
+
+// F-21: keep media drift offsets normalized through the shared alignment helper so UI edits, preview, and export stay consistent.
+function normalizeMediaAlignmentOffsets(rawOffsets = {}) {
+  const normalized =
+    window.bikeFlyOverApp?.normalizeMediaAlignmentOffsets?.(rawOffsets);
+
+  if (normalized) {
+    return normalized;
+  }
+
+  return {
+    deviceClockOffsetSeconds: 0,
+    globalOffsetSeconds: 0,
+  };
+}
+// end F-21
 
 function clampNumber(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -746,6 +769,41 @@ function formatMediaTimestampDetails(item) {
 
   return "Timestamp metadata pending extraction";
 }
+
+// F-21: show corrected capture times and configured offsets so users can verify drift fixes without reimporting media.
+function formatSignedOffsetSeconds(valueSeconds) {
+  const absoluteSeconds = Math.abs(valueSeconds);
+  const normalizedSeconds = Number.isInteger(absoluteSeconds)
+    ? absoluteSeconds
+    : Number(absoluteSeconds.toFixed(2));
+
+  return `${valueSeconds >= 0 ? "+" : "-"}${normalizedSeconds}s`;
+}
+
+function formatMediaAlignmentOffsetSummary(rawOffsets = {}) {
+  const offsets = normalizeMediaAlignmentOffsets(rawOffsets);
+  const totalOffsetSeconds =
+    offsets.globalOffsetSeconds + offsets.deviceClockOffsetSeconds;
+
+  if (totalOffsetSeconds === 0) {
+    return "No time correction applied.";
+  }
+
+  return `Net ${formatSignedOffsetSeconds(totalOffsetSeconds)} (${formatSignedOffsetSeconds(offsets.globalOffsetSeconds)} global, ${formatSignedOffsetSeconds(offsets.deviceClockOffsetSeconds)} device).`;
+}
+
+function formatAdjustedMediaTimestampDetails(item) {
+  if (!item.adjustedCapturedAt) {
+    return "No corrected capture time available";
+  }
+
+  if (!item.appliedAlignmentOffsetMs) {
+    return `Effective capture ${formatTimestamp(item.adjustedCapturedAt)} · no correction`;
+  }
+
+  return `Effective capture ${formatTimestamp(item.adjustedCapturedAt)} · net ${formatSignedOffsetSeconds(item.appliedAlignmentOffsetMs / 1000)}`;
+}
+// end F-21
 
 function formatMediaAlignmentStatus(status) {
   if (status === "aligned") {
@@ -1514,105 +1572,17 @@ function mergeImportedMedia(existingItems, importedItems) {
   return Array.from(byPath.values());
 }
 
-function findNearestTrackIndex(trackpoints, timestamp) {
-  if (trackpoints.length === 0) {
-    return null;
+// F-21: route all media re-alignment through the shared preload helper so offsets affect preview and export the same way.
+function alignMediaLibraryItemsToTrack(mediaItems, trackpoints) {
+  const aligner = window.bikeFlyOverApp?.alignMediaItemsToTrack;
+
+  if (typeof aligner !== "function") {
+    throw new Error("Shared media alignment helpers are unavailable.");
   }
 
-  let low = 0;
-  let high = trackpoints.length - 1;
-
-  while (low <= high) {
-    const middle = Math.floor((low + high) / 2);
-    const middleTimestamp = trackpoints[middle].timestamp;
-
-    if (middleTimestamp === timestamp) {
-      return middle;
-    }
-
-    if (middleTimestamp < timestamp) {
-      low = middle + 1;
-    } else {
-      high = middle - 1;
-    }
-  }
-
-  if (low >= trackpoints.length) {
-    return trackpoints.length - 1;
-  }
-
-  if (high < 0) {
-    return 0;
-  }
-
-  return Math.abs(trackpoints[low].timestamp - timestamp) <
-    Math.abs(trackpoints[high].timestamp - timestamp)
-    ? low
-    : high;
+  return aligner(mediaItems, trackpoints, mediaLibraryState.alignmentOffsets);
 }
-
-function alignMediaItemsToTrack(mediaItems, trackpoints) {
-  const startTimestamp = trackpoints[0].timestamp;
-  const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
-
-  return mediaItems
-    .map((item) => {
-      if (!Number.isFinite(item.capturedAtTimestamp)) {
-        return {
-          ...item,
-          alignmentStatus: "missing-timestamp",
-          alignedActivityTimestamp: null,
-          alignedActivityTime: null,
-          nearestTrackIndex: null,
-        };
-      }
-
-      if (item.capturedAtTimestamp < startTimestamp) {
-        return {
-          ...item,
-          alignmentStatus: "before-start",
-          alignedActivityTimestamp: startTimestamp,
-          alignedActivityTime: new Date(startTimestamp).toISOString(),
-          nearestTrackIndex: 0,
-        };
-      }
-
-      if (item.capturedAtTimestamp > endTimestamp) {
-        return {
-          ...item,
-          alignmentStatus: "after-end",
-          alignedActivityTimestamp: endTimestamp,
-          alignedActivityTime: new Date(endTimestamp).toISOString(),
-          nearestTrackIndex: trackpoints.length - 1,
-        };
-      }
-
-      return {
-        ...item,
-        alignmentStatus: "aligned",
-        alignedActivityTimestamp: item.capturedAtTimestamp,
-        alignedActivityTime: new Date(item.capturedAtTimestamp).toISOString(),
-        nearestTrackIndex: findNearestTrackIndex(
-          trackpoints,
-          item.capturedAtTimestamp,
-        ),
-      };
-    })
-    .sort((left, right) => {
-      const leftTimestamp = Number.isFinite(left.alignedActivityTimestamp)
-        ? left.alignedActivityTimestamp
-        : Number.POSITIVE_INFINITY;
-      const rightTimestamp = Number.isFinite(right.alignedActivityTimestamp)
-        ? right.alignedActivityTimestamp
-        : Number.POSITIVE_INFINITY;
-
-      if (leftTimestamp !== rightTimestamp) {
-        return leftTimestamp - rightTimestamp;
-      }
-
-      return left.fileName.localeCompare(right.fileName);
-    });
-}
+// end F-21
 
 function createBaseLayer(Cesium) {
   const baseLayer = Cesium.ImageryLayer.fromProviderAsync(
@@ -3054,6 +3024,14 @@ function applyParameterInputAttributes() {
     applyNumericInputDefinition(elementId, CAMERA_SETTINGS_FIELDS[settingKey]);
   }
 
+  applyNumericInputDefinition(
+    "mediaGlobalOffsetInput",
+    MEDIA_ALIGNMENT_FIELDS.globalOffsetSeconds,
+  );
+  applyNumericInputDefinition(
+    "mediaDeviceOffsetInput",
+    MEDIA_ALIGNMENT_FIELDS.deviceClockOffsetSeconds,
+  );
   // F-69: apply terrain parameter bounds from shared config so the terrain exaggeration control stays aligned with export settings.
   applyNumericInputDefinition(
     "terrainExaggerationInput",
@@ -3349,6 +3327,10 @@ function updateMediaLibraryUi() {
   } else {
     setTextContent("mediaLibraryStatus", mediaLibraryState.statusMessage);
   }
+  setTextContent(
+    "mediaOffsetSummary",
+    formatMediaAlignmentOffsetSummary(mediaLibraryState.alignmentOffsets),
+  );
 
   setElementDisabled(
     "importMediaButton",
@@ -3417,6 +3399,10 @@ function updateMediaLibraryUi() {
     timestampDetails.className = "media-library-meta";
     timestampDetails.textContent = formatMediaTimestampDetails(item);
 
+    const correctionDetails = document.createElement("p");
+    correctionDetails.className = "media-library-meta";
+    correctionDetails.textContent = formatAdjustedMediaTimestampDetails(item);
+
     const alignmentStatus = document.createElement("p");
     alignmentStatus.className = "media-library-status";
     alignmentStatus.textContent = formatMediaAlignmentStatus(item.alignmentStatus);
@@ -3430,6 +3416,7 @@ function updateMediaLibraryUi() {
       meta,
       status,
       timestampDetails,
+      correctionDetails,
       alignmentStatus,
       alignmentDetails,
     );
@@ -3438,8 +3425,91 @@ function updateMediaLibraryUi() {
   }
 }
 
-function setupMediaLibraryControls(viewer, sampleTrack) {
+// F-21: let drift offset inputs re-align the whole media library immediately so corrected markers and export timing update without reimporting.
+function syncMediaAlignmentControls() {
+  const offsets = normalizeMediaAlignmentOffsets(mediaLibraryState.alignmentOffsets);
+  mediaLibraryState.alignmentOffsets = offsets;
+  setNumericInputValue("mediaGlobalOffsetInput", offsets.globalOffsetSeconds);
+  setNumericInputValue("mediaDeviceOffsetInput", offsets.deviceClockOffsetSeconds);
+}
+
+function buildMediaLibraryStatusMessage() {
+  if (mediaLibraryState.items.length === 0) {
+    return "No media imported yet.";
+  }
+
+  const alignedCount = mediaLibraryState.items.filter((item) => {
+    return item.alignmentStatus === "aligned";
+  }).length;
+  const outOfRangeCount = mediaLibraryState.items.filter((item) => {
+    return (
+      item.alignmentStatus === "before-start" ||
+      item.alignmentStatus === "after-end"
+    );
+  }).length;
+
+  return `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range.`;
+}
+
+function applyMediaAlignmentToLibrary(playbackState, mediaItems = mediaLibraryState.items) {
+  mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets(
+    mediaLibraryState.alignmentOffsets,
+  );
+  mediaLibraryState.items = decorateMediaItemsForPreview(
+    alignMediaLibraryItemsToTrack(mediaItems, playbackState.trackpoints),
+  );
+  mediaLibraryState.statusMessage = buildMediaLibraryStatusMessage();
+}
+
+function refreshMediaLibraryPresentation(viewer, playbackState) {
+  syncMediaAlignmentControls();
+  updateMediaLibraryUi();
+  syncMediaPreviewEntities(viewer, playbackState);
+  if (playbackState) {
+    void updateMediaPreviewOverlay(playbackState);
+  }
+}
+
+function setupMediaLibraryControls(viewer, playbackState) {
   const importMediaButton = document.getElementById("importMediaButton");
+  const mediaOffsetInputs = [
+    ["mediaGlobalOffsetInput", "globalOffsetSeconds"],
+    ["mediaDeviceOffsetInput", "deviceClockOffsetSeconds"],
+  ];
+
+  syncMediaAlignmentControls();
+
+  for (const [elementId, offsetKey] of mediaOffsetInputs) {
+    const input = document.getElementById(elementId);
+    const applyOffsetChange = (rawValue) => {
+      mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets({
+        ...mediaLibraryState.alignmentOffsets,
+        [offsetKey]: rawValue,
+      });
+      applyMediaAlignmentToLibrary(playbackState);
+      refreshMediaLibraryPresentation(viewer, playbackState);
+    };
+
+    input?.addEventListener("input", (event) => {
+      const target = event.currentTarget;
+
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      applyOffsetChange(target.value);
+    });
+
+    input?.addEventListener("change", (event) => {
+      const target = event.currentTarget;
+
+      if (!(target instanceof HTMLInputElement)) {
+        return;
+      }
+
+      applyOffsetChange(target.value);
+    });
+  }
 
   importMediaButton?.addEventListener("click", async () => {
     mediaLibraryState.isImporting = true;
@@ -3462,27 +3532,13 @@ function setupMediaLibraryControls(viewer, sampleTrack) {
           value: 70,
         };
         updateMediaLibraryUi();
-        mediaLibraryState.items = decorateMediaItemsForPreview(
-          alignMediaItemsToTrack(
-            mergeImportedMedia(
-              mediaLibraryState.items,
-              result.mediaItems,
-            ),
-            sampleTrack.trackpoints,
-          ),
+        applyMediaAlignmentToLibrary(
+          playbackState,
+          mergeImportedMedia(mediaLibraryState.items, result.mediaItems),
         );
-        const alignedCount = mediaLibraryState.items.filter((item) => {
-          return item.alignmentStatus === "aligned";
-        }).length;
-        const outOfRangeCount = mediaLibraryState.items.filter((item) => {
-          return (
-            item.alignmentStatus === "before-start" ||
-            item.alignmentStatus === "after-end"
-          );
-        }).length;
         mediaLibraryState.statusMessage =
           result.mediaItems.length > 0
-            ? `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range.`
+            ? buildMediaLibraryStatusMessage()
             : "No supported media files were added.";
         mediaLibraryState.progress = {
           indeterminate: false,
@@ -3490,7 +3546,7 @@ function setupMediaLibraryControls(viewer, sampleTrack) {
           status: result.mediaItems.length > 0 ? "complete" : "idle",
           value: result.mediaItems.length > 0 ? 100 : 0,
         };
-        syncMediaPreviewEntities(viewer, playbackState);
+        refreshMediaLibraryPresentation(viewer, playbackState);
       } else if (result?.cancelled) {
         mediaLibraryState.statusMessage =
           mediaLibraryState.items.length > 0
@@ -3514,13 +3570,11 @@ function setupMediaLibraryControls(viewer, sampleTrack) {
       };
     } finally {
       mediaLibraryState.isImporting = false;
-      updateMediaLibraryUi();
-      if (window.playbackState) {
-        void updateMediaPreviewOverlay(window.playbackState);
-      }
+      refreshMediaLibraryPresentation(viewer, playbackState);
     }
   });
 }
+// end F-21
 
 function updateExportUi(statusUpdate) {
   const currentFrame = statusUpdate.currentFrame || 0;
@@ -3564,6 +3618,14 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("cameraOverviewRangeMultiplierInput", exportUiState.isExporting);
   setElementDisabled("terrainEnabledCheckbox", exportUiState.isExporting);
   setElementDisabled("terrainExaggerationInput", exportUiState.isExporting);
+  setElementDisabled(
+    "mediaGlobalOffsetInput",
+    exportUiState.isExporting || mediaLibraryState.isImporting,
+  );
+  setElementDisabled(
+    "mediaDeviceOffsetInput",
+    exportUiState.isExporting || mediaLibraryState.isImporting,
+  );
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
@@ -4003,6 +4065,9 @@ async function initializeApp() {
     if (!EXPORT_OPTIONS?.defaults || !EXPORT_OPTIONS?.parameterConfig) {
       throw new Error("Export options are unavailable in the renderer.");
     }
+    if (!MEDIA_ALIGNMENT_OPTIONS?.defaults || !MEDIA_ALIGNMENT_OPTIONS?.parameterConfig) {
+      throw new Error("Media alignment options are unavailable in the renderer.");
+    }
 
     setRouteStatus("Loading satellite basemap...");
     const viewer = createViewer(RENDER_MODE);
@@ -4057,7 +4122,7 @@ async function initializeApp() {
       updateMediaLibraryUi();
       void updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
-      setupMediaLibraryControls(viewer, sampleTrack);
+      setupMediaLibraryControls(viewer, playbackState);
       setupPlaybackControls(viewer, playbackState);
       setupCameraSettingsControls(viewer, playbackState);
       setupTerrainControls(viewer, playbackState);

@@ -42,3 +42,9 @@ Allow the user to correct time drift between imported media timestamps and the a
 
 - Depends on `F-18`, `F-19`, and `F-20`.
 - Supports `F-22` and future media composition work.
+
+## Implementation notes
+
+- Added shared drift-offset normalization and corrected-timestamp alignment before media is mapped onto the activity timeline.
+- Added renderer UI fields for a global media offset and a separate camera/device clock offset.
+- Offset edits now re-align imported media immediately, update preview markers, and feed the export payload through the same aligned media items.

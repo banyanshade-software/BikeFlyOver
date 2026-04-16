@@ -1,8 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
+  MEDIA_ALIGNMENT_OFFSET_DEFAULTS,
   alignMediaItemsToTrack,
   findNearestTrackIndex,
+  normalizeMediaAlignmentOffsets,
 } = require("../src/shared/media-alignment");
 const {
   getActiveMediaPresentation,
@@ -69,6 +71,28 @@ test("alignMediaItemsToTrack clamps before-start and after-end captures and sort
       },
     ],
   );
+});
+
+test("alignment offsets shift the effective capture time before track alignment", () => {
+  const alignedItems = alignMediaItemsToTrack(
+    [
+      {
+        capturedAtTimestamp: 1_500,
+        fileName: "offset.jpg",
+      },
+    ],
+    trackpoints,
+    {
+      globalOffsetSeconds: 1,
+      deviceClockOffsetSeconds: -0.25,
+    },
+  );
+
+  assert.deepEqual(normalizeMediaAlignmentOffsets(), MEDIA_ALIGNMENT_OFFSET_DEFAULTS);
+  assert.equal(alignedItems[0].adjustedCapturedAtTimestamp, 2_250);
+  assert.equal(alignedItems[0].appliedAlignmentOffsetMs, 750);
+  assert.equal(alignedItems[0].alignedActivityTimestamp, 2_250);
+  assert.equal(alignedItems[0].nearestTrackIndex, 1);
 });
 
 test("getActiveMediaPresentation picks the most recent overlapping media window", () => {

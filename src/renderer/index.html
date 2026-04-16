@@ -247,8 +247,20 @@
                 <dt>Status</dt>
                 <dd id="mediaLibraryStatus">No media imported yet.</dd>
               </div>
+              <div>
+                <dt>Time correction</dt>
+                <dd id="mediaOffsetSummary">No time correction applied.</dd>
+              </div>
             </dl>
             <div class="field-stack media-settings-stack">
+              <label class="field-group" for="mediaGlobalOffsetInput">
+                <span class="field-label">Global media offset (s)</span>
+                <input id="mediaGlobalOffsetInput" type="number" />
+              </label>
+              <label class="field-group" for="mediaDeviceOffsetInput">
+                <span class="field-label">Camera/device clock offset (s)</span>
+                <input id="mediaDeviceOffsetInput" type="number" />
+              </label>
               <label class="field-group">
                 <span class="field-label">Photo export hold</span>
                 <input id="photoDisplayDurationInput" type="number" />
@@ -258,6 +270,9 @@
                 <span>Enable subtle Ken Burns effect on exported photos</span>
               </label>
             </div>
+            <p class="helper-text">
+              Positive offsets move media later on the activity timeline. Changes update preview markers and export timing immediately.
+            </p>
             <ul id="mediaLibraryList" class="media-library-list" aria-live="polite">
               <li class="media-library-empty">Imported photos and videos will appear here.</li>
             </ul>

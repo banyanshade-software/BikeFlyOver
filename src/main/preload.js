@@ -1,5 +1,11 @@
 const { pathToFileURL } = require("node:url");
 const { contextBridge, ipcRenderer } = require("electron");
+const {
+  MEDIA_ALIGNMENT_OFFSET_DEFAULTS,
+  MEDIA_ALIGNMENT_OFFSET_FIELDS,
+  alignMediaItemsToTrack: alignMediaItemsToTrackShared,
+  normalizeMediaAlignmentOffsets: normalizeMediaAlignmentOffsetsShared,
+} = require("../shared/media-alignment");
 const { loadSampleTrack } = require("../shared/sample-track");
 const {
   CAMERA_SETTINGS_FIELDS,
@@ -30,7 +36,23 @@ function subscribe(channel, listener) {
 }
 
 contextBridge.exposeInMainWorld("bikeFlyOverApp", {
+  // F-21: expose shared alignment offset helpers so the renderer can re-align media without duplicating drift logic.
+  alignMediaItemsToTrack(mediaItems, trackpoints, offsets) {
+    return alignMediaItemsToTrackShared(mediaItems, trackpoints, offsets);
+  },
+  // end F-21
   loadSampleTrack,
+  // F-21: publish the shared offset defaults/limits and normalizer so UI edits stay aligned with the shared timing model.
+  getMediaAlignmentOptions() {
+    return {
+      defaults: MEDIA_ALIGNMENT_OFFSET_DEFAULTS,
+      parameterConfig: MEDIA_ALIGNMENT_OFFSET_FIELDS,
+    };
+  },
+  normalizeMediaAlignmentOffsets(offsets) {
+    return normalizeMediaAlignmentOffsetsShared(offsets);
+  },
+  // end F-21
   getExportOptions() {
     return {
       defaults: EXPORT_DEFAULTS,

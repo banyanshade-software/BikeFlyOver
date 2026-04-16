@@ -43,7 +43,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-18 |v1  | Media | Import photos and videos into the project | Required by the spec | Implemented |
 | F-19 |v1  | Media | Read EXIF timestamps from photos and videos | Required for automatic placement | Implemented |
 | F-20 |v1  | Media | Place photos/videos on the route timeline using timestamp alignment | Required by the spec | Implemented |
-| F-21 |v2  | Media | Provide UI fields to fix camera/GPS time drift | Explicitly requested in the spec | Not implemented |
+| F-21 |v2  | Media | Provide UI fields to fix camera/GPS time drift | Explicitly requested in the spec | Implemented |
 | F-22 |v3  | Media | Preview inserted media in the timeline and viewer | Needed to validate placement before export | Not implemented |
 | F-67 |v1  | Media | Show aligned media as permanent thumbnail/card markers placed on the track in the preview window | Gives immediate visual feedback that media placement is working before export | Implemented |
 | F-68 |v1  | Media | Insert aligned media into the generated video with a simple animation | Turns imported photos/videos into visible output instead of metadata-only timeline items | Implemented |

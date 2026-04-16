@@ -1,3 +1,77 @@
+const MEDIA_ALIGNMENT_OFFSET_FIELDS = Object.freeze({
+  globalOffsetSeconds: {
+    type: "number",
+    default: 0,
+    min: -86400,
+    max: 86400,
+    step: 1,
+  },
+  deviceClockOffsetSeconds: {
+    type: "number",
+    default: 0,
+    min: -86400,
+    max: 86400,
+    step: 1,
+  },
+});
+
+const MEDIA_ALIGNMENT_OFFSET_DEFAULTS = Object.freeze({
+  globalOffsetSeconds: MEDIA_ALIGNMENT_OFFSET_FIELDS.globalOffsetSeconds.default,
+  deviceClockOffsetSeconds:
+    MEDIA_ALIGNMENT_OFFSET_FIELDS.deviceClockOffsetSeconds.default,
+});
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+// F-21: centralize media drift offsets so preview and export reuse one corrected timestamp model.
+function normalizeMediaAlignmentOffsets(rawOffsets = {}) {
+  return Object.fromEntries(
+    Object.entries(MEDIA_ALIGNMENT_OFFSET_FIELDS).map(([key, definition]) => {
+      const parsed = Number(rawOffsets?.[key]);
+      const fallback = MEDIA_ALIGNMENT_OFFSET_DEFAULTS[key];
+
+      return [
+        key,
+        clamp(
+          Number.isFinite(parsed) ? parsed : fallback,
+          definition.min,
+          definition.max,
+        ),
+      ];
+    }),
+  );
+}
+
+function getMediaAlignmentOffsetMs(rawOffsets = {}) {
+  const normalizedOffsets = normalizeMediaAlignmentOffsets(rawOffsets);
+  return Math.round(
+    (normalizedOffsets.globalOffsetSeconds +
+      normalizedOffsets.deviceClockOffsetSeconds) *
+      1000,
+  );
+}
+
+function applyMediaAlignmentOffsets(item, rawOffsets = {}) {
+  const normalizedOffsets = normalizeMediaAlignmentOffsets(rawOffsets);
+  const appliedAlignmentOffsetMs = getMediaAlignmentOffsetMs(normalizedOffsets);
+  const adjustedCapturedAtTimestamp = Number.isFinite(item?.capturedAtTimestamp)
+    ? item.capturedAtTimestamp + appliedAlignmentOffsetMs
+    : null;
+
+  return {
+    ...item,
+    adjustedCapturedAt: Number.isFinite(adjustedCapturedAtTimestamp)
+      ? new Date(adjustedCapturedAtTimestamp).toISOString()
+      : null,
+    adjustedCapturedAtTimestamp,
+    alignmentOffsets: normalizedOffsets,
+    appliedAlignmentOffsetMs,
+  };
+}
+// end F-21
+
 function findNearestTrackIndex(trackpoints, timestamp) {
   if (trackpoints.length === 0) {
     return null;
@@ -35,10 +109,15 @@ function findNearestTrackIndex(trackpoints, timestamp) {
     : high;
 }
 
-function alignMediaItemToTrack(item, trackpoints) {
-  if (!Number.isFinite(item.capturedAtTimestamp) || trackpoints.length === 0) {
+function alignMediaItemToTrack(item, trackpoints, rawOffsets = {}) {
+  const adjustedItem = applyMediaAlignmentOffsets(item, rawOffsets);
+
+  if (
+    !Number.isFinite(adjustedItem.adjustedCapturedAtTimestamp) ||
+    trackpoints.length === 0
+  ) {
     return {
-      ...item,
+      ...adjustedItem,
       alignmentStatus: "missing-timestamp",
       alignedActivityTimestamp: null,
       alignedActivityTime: null,
@@ -49,9 +128,9 @@ function alignMediaItemToTrack(item, trackpoints) {
   const startTimestamp = trackpoints[0].timestamp;
   const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
 
-  if (item.capturedAtTimestamp < startTimestamp) {
+  if (adjustedItem.adjustedCapturedAtTimestamp < startTimestamp) {
     return {
-      ...item,
+      ...adjustedItem,
       alignmentStatus: "before-start",
       alignedActivityTimestamp: startTimestamp,
       alignedActivityTime: new Date(startTimestamp).toISOString(),
@@ -59,9 +138,9 @@ function alignMediaItemToTrack(item, trackpoints) {
     };
   }
 
-  if (item.capturedAtTimestamp > endTimestamp) {
+  if (adjustedItem.adjustedCapturedAtTimestamp > endTimestamp) {
     return {
-      ...item,
+      ...adjustedItem,
       alignmentStatus: "after-end",
       alignedActivityTimestamp: endTimestamp,
       alignedActivityTime: new Date(endTimestamp).toISOString(),
@@ -70,11 +149,16 @@ function alignMediaItemToTrack(item, trackpoints) {
   }
 
   return {
-    ...item,
+    ...adjustedItem,
     alignmentStatus: "aligned",
-    alignedActivityTimestamp: item.capturedAtTimestamp,
-    alignedActivityTime: new Date(item.capturedAtTimestamp).toISOString(),
-    nearestTrackIndex: findNearestTrackIndex(trackpoints, item.capturedAtTimestamp),
+    alignedActivityTimestamp: adjustedItem.adjustedCapturedAtTimestamp,
+    alignedActivityTime: new Date(
+      adjustedItem.adjustedCapturedAtTimestamp,
+    ).toISOString(),
+    nearestTrackIndex: findNearestTrackIndex(
+      trackpoints,
+      adjustedItem.adjustedCapturedAtTimestamp,
+    ),
   };
 }
 
@@ -93,14 +177,19 @@ function compareAlignedMedia(left, right) {
   return left.fileName.localeCompare(right.fileName);
 }
 
-function alignMediaItemsToTrack(mediaItems, trackpoints) {
+function alignMediaItemsToTrack(mediaItems, trackpoints, rawOffsets = {}) {
   return mediaItems
-    .map((item) => alignMediaItemToTrack(item, trackpoints))
+    .map((item) => alignMediaItemToTrack(item, trackpoints, rawOffsets))
     .sort(compareAlignedMedia);
 }
 
 module.exports = {
+  MEDIA_ALIGNMENT_OFFSET_DEFAULTS,
+  MEDIA_ALIGNMENT_OFFSET_FIELDS,
+  applyMediaAlignmentOffsets,
   alignMediaItemsToTrack,
   alignMediaItemToTrack,
   findNearestTrackIndex,
+  getMediaAlignmentOffsetMs,
+  normalizeMediaAlignmentOffsets,
 };
