@@ -247,6 +247,10 @@ function normalizeTerrainSettings(rawTerrainSettings = {}) {
   };
 
   return {
+    enabled:
+      rawTerrainSettings.enabled === undefined
+        ? defaultTerrainSettings.enabled ?? TERRAIN_SETTINGS_FIELDS.enabled?.default ?? true
+        : Boolean(rawTerrainSettings.enabled),
     exaggeration: normalizeTerrainSetting("exaggeration", 1),
     routeOffsetMeters: normalizeTerrainSetting(
       "routeOffsetMeters",
@@ -261,14 +265,26 @@ function setTerrainStatus(message) {
 
 function syncTerrainSettingsControls(playbackState) {
   const terrainSettings = normalizeTerrainSettings(playbackState.terrain.settings);
+  const terrainEnabledCheckbox = document.getElementById("terrainEnabledCheckbox");
   const terrainExaggerationInput = document.getElementById(
     "terrainExaggerationInput",
   );
 
   playbackState.terrain.settings = terrainSettings;
 
+  if (terrainEnabledCheckbox instanceof HTMLInputElement) {
+    terrainEnabledCheckbox.checked = terrainSettings.enabled;
+  }
+
   if (terrainExaggerationInput instanceof HTMLInputElement) {
     terrainExaggerationInput.value = String(terrainSettings.exaggeration);
+    terrainExaggerationInput.disabled =
+      !terrainSettings.enabled || exportUiState.isExporting;
+  }
+
+  if (!terrainSettings.enabled) {
+    setTerrainStatus("3D terrain disabled.");
+    return;
   }
 
   if (playbackState.terrain.providerError) {
@@ -1439,8 +1455,10 @@ function createPlaybackState(trackpoints, options = {}) {
     routePositions: [],
     // F-69: keep terrain state in playback so route geometry and export snapshots can share the same exaggeration/source data.
     terrain: {
+      flatProvider: null,
       providerError: null,
       providerLabel: DEFAULT_TERRAIN_PROVIDER_LABEL,
+      provider: null,
       providerReady: false,
       sampledHeights: [],
       settings: normalizeTerrainSettings(
@@ -1620,6 +1638,10 @@ function getTerrainDisplayHeight(playbackState, trackpointIndex) {
   const sampledHeight = playbackState.terrain.sampledHeights[trackpointIndex];
   const terrainSettings = normalizeTerrainSettings(playbackState.terrain.settings);
 
+  if (!terrainSettings.enabled) {
+    return terrainSettings.routeOffsetMeters;
+  }
+
   return (
     (Number.isFinite(sampledHeight) ? sampledHeight : 0) *
       terrainSettings.exaggeration +
@@ -1642,6 +1664,8 @@ async function sampleRouteTerrainHeights(viewer, playbackState) {
 
   if (
     !Cesium ||
+    !normalizeTerrainSettings(playbackState.terrain.settings).enabled ||
+    !playbackState.terrain.providerReady ||
     !viewer?.terrainProvider ||
     viewer.terrainProvider instanceof Cesium.EllipsoidTerrainProvider
   ) {
@@ -2404,31 +2428,45 @@ async function loadTerrainProvider(Cesium) {
 
     return {
       error: error instanceof Error ? error : new Error(String(error)),
-      provider: new Cesium.EllipsoidTerrainProvider(),
+      provider: null,
       providerLabel: "Flat terrain fallback",
     };
   }
 }
 
-function applyTerrainSceneSettings(viewer, terrainSettings) {
+async function ensureTerrainProvider(viewer, playbackState) {
+  const Cesium = window.Cesium;
+
+  if (playbackState.terrain.provider || playbackState.terrain.providerError) {
+    return;
+  }
+
+  const terrainState = await loadTerrainProvider(Cesium);
+  playbackState.terrain.provider = terrainState.provider;
+  playbackState.terrain.providerError = terrainState.error;
+  playbackState.terrain.providerLabel = terrainState.providerLabel;
+  playbackState.terrain.providerReady = Boolean(terrainState.provider) && !terrainState.error;
+}
+
+function applyTerrainSceneSettings(viewer, playbackState) {
+  const terrainSettings = normalizeTerrainSettings(playbackState.terrain.settings);
+
+  viewer.terrainProvider =
+    terrainSettings.enabled && playbackState.terrain.providerReady
+      ? playbackState.terrain.provider
+      : playbackState.terrain.flatProvider;
   viewer.scene.globe.depthTestAgainstTerrain = true;
-  viewer.scene.verticalExaggeration = terrainSettings.exaggeration;
+  viewer.scene.verticalExaggeration = terrainSettings.enabled
+    ? terrainSettings.exaggeration
+    : 1;
   viewer.scene.verticalExaggerationRelativeHeight = 0;
   viewer.scene.requestRender();
 }
 
 async function initializeViewerTerrain(viewer, playbackState) {
-  const Cesium = window.Cesium;
-  const terrainState = await loadTerrainProvider(Cesium);
-
-  viewer.terrainProvider = terrainState.provider;
-  playbackState.terrain.providerError = terrainState.error;
-  playbackState.terrain.providerLabel = terrainState.providerLabel;
-  playbackState.terrain.providerReady = !terrainState.error;
-  applyTerrainSceneSettings(
-    viewer,
-    normalizeTerrainSettings(playbackState.terrain.settings),
-  );
+  playbackState.terrain.flatProvider = viewer.terrainProvider;
+  await ensureTerrainProvider(viewer, playbackState);
+  applyTerrainSceneSettings(viewer, playbackState);
   syncTerrainSettingsControls(playbackState);
 
   try {
@@ -2450,8 +2488,9 @@ async function applyTerrainSettingsChange(viewer, playbackState, nextPartialSett
     ...playbackState.terrain.settings,
     ...nextPartialSettings,
   });
-  applyTerrainSceneSettings(viewer, playbackState.terrain.settings);
   try {
+    await ensureTerrainProvider(viewer, playbackState);
+    applyTerrainSceneSettings(viewer, playbackState);
     await refreshTerrainRouteGeometry(viewer, playbackState, {
       updateTimelineState: true,
     });
@@ -3047,9 +3086,22 @@ function applyParameterInputAttributes() {
 
 // F-69: wire the terrain exaggeration control so terrain relief and grounded route geometry update together.
 function setupTerrainControls(viewer, playbackState) {
+  const terrainEnabledCheckbox = document.getElementById("terrainEnabledCheckbox");
   const terrainExaggerationInput = document.getElementById("terrainExaggerationInput");
 
   syncTerrainSettingsControls(playbackState);
+
+  terrainEnabledCheckbox?.addEventListener("change", async (event) => {
+    const target = event.currentTarget;
+
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    await applyTerrainSettingsChange(viewer, playbackState, {
+      enabled: target.checked,
+    });
+  });
 
   terrainExaggerationInput?.addEventListener("input", async (event) => {
     const target = event.currentTarget;
@@ -3510,6 +3562,7 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("cameraSmoothingStrengthInput", exportUiState.isExporting);
   setElementDisabled("cameraOverviewPitchInput", exportUiState.isExporting);
   setElementDisabled("cameraOverviewRangeMultiplierInput", exportUiState.isExporting);
+  setElementDisabled("terrainEnabledCheckbox", exportUiState.isExporting);
   setElementDisabled("terrainExaggerationInput", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
@@ -3714,7 +3767,7 @@ function applyRendererSettings(viewer, playbackState, settings, options = {}) {
   playbackState.camera.settings = normalizeCameraSettings(settings.cameraSettings);
   // F-69: apply shared terrain settings whenever renderer state is restored so preview/export keep the same exaggeration.
   playbackState.terrain.settings = normalizeTerrainSettings(settings.terrainSettings);
-  applyTerrainSceneSettings(viewer, playbackState.terrain.settings);
+  applyTerrainSceneSettings(viewer, playbackState);
   // end F-69
   playbackState.ui.speedGaugeMaxKph = normalizeSpeedGaugeMaxKph(
     settings.speedGaugeMaxKph,

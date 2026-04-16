@@ -239,6 +239,10 @@ function normalizeTerrainSettings(rawTerrainSettings = {}) {
   );
 
   return {
+    enabled:
+      rawTerrainSettings.enabled === undefined
+        ? TERRAIN_SETTINGS_DEFAULTS.enabled
+        : Boolean(rawTerrainSettings.enabled),
     exaggeration: clamp(
       normalizePositiveNumber(
         rawTerrainSettings.exaggeration ?? TERRAIN_SETTINGS_DEFAULTS.exaggeration,

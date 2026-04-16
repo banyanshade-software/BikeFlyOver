@@ -89,6 +89,10 @@ const CAMERA_SETTINGS_FIELDS = freezeDefinitionMap({
 
 // F-69: centralize terrain defaults so preview/export share the same exaggeration and ground offset.
 const TERRAIN_SETTINGS_FIELDS = freezeDefinitionMap({
+  enabled: {
+    type: "boolean",
+    default: true,
+  },
   exaggeration: {
     type: "number",
     default: 1.4,
