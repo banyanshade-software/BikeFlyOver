@@ -78,7 +78,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-51 |v3  | Performance enhancement | Optimize timeline scrubbing so camera and overlays update smoothly on large projects | Important once real media and multiple traces are added | Not implemented |
 | F-52 |v2  | Reliability | Improve imagery/provider failure handling with clear retry and abort messaging | Mentioned in the export plan risks | Partial |
 | F-53 |v2  | Reliability | Add import validation for malformed/empty TCX and FIT files | Needed for real-world usage | Partial |
-| F-54 |v2  | Reliability | Add automated tests for import parsing, playback synchronization, export frame math, and project persistence | Required by the quality goals in the spec | Partial |
+| F-54 |v2  | Reliability | Add automated tests for import parsing, playback synchronization, export frame math, and project persistence | Required by the quality goals in the spec | Implemented |
 | F-55 |v1  | Bug fix | Prevent the track line from visually floating too high above the ground or terrain | Fixes an obvious visual defect in route rendering | Implemented |
 | F-56 |v1  | Bug fix | Ensure route markers and played-route highlight stay aligned with the same altitude/terrain strategy as the base track | Avoids mismatched route geometry during playback | Implemented |
 | F-57 |v1  | Bug fix | Fix follow-camera drift, jitter, or overshoot on tight turns and steep elevation changes | Improves preview and export quality | Implemented |
