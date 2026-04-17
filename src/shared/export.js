@@ -145,15 +145,15 @@ function clampToFieldDefinition(value, definition) {
   );
 }
 
+// F-74: handle boolean overlay fields; enum type support removed — speedDisplayMode replaced by separate speedText flag
 function normalizeOverlayVisibilitySettings(rawVisibility = {}) {
   return Object.keys(OVERLAY_VISIBILITY_DEFAULTS).reduce((visibility, key) => {
-    visibility[key] =
-      typeof rawVisibility?.[key] === "boolean"
-        ? rawVisibility[key]
-        : OVERLAY_VISIBILITY_DEFAULTS[key];
+    const raw = rawVisibility?.[key];
+    visibility[key] = typeof raw === "boolean" ? raw : OVERLAY_VISIBILITY_DEFAULTS[key];
     return visibility;
   }, {});
 }
+// end F-74
 
 function normalizeCameraSettings(rawCameraSettings = {}) {
   return {

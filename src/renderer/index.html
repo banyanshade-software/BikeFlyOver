@@ -206,8 +206,14 @@
               </label>
               <label class="checkbox-group" for="overlaySpeedGaugeCheckbox">
                 <input id="overlaySpeedGaugeCheckbox" type="checkbox" />
-                <span>Show graphical speed gauge</span>
+                <span>Show speed gauge (dial)</span>
               </label>
+              <!-- F-74: independent text speed overlay -->
+              <label class="checkbox-group" for="overlaySpeedTextCheckbox">
+                <input id="overlaySpeedTextCheckbox" type="checkbox" />
+                <span>Show speed (text)</span>
+              </label>
+              <!-- end F-74 -->
               <label class="checkbox-group" for="overlayHeartRateGaugeCheckbox">
                 <input id="overlayHeartRateGaugeCheckbox" type="checkbox" />
                 <span>Show heart rate gauge</span>
@@ -248,20 +254,13 @@
                 <dd id="mediaLibraryStatus">No media imported yet.</dd>
               </div>
               <div>
-                <dt>Time correction</dt>
-                <dd id="mediaOffsetSummary">No time correction applied.</dd>
+                <dt>Correction model</dt>
+                <dd id="mediaOffsetSummary">Per-media correction only until camera metadata is available.</dd>
               </div>
             </dl>
             <div class="field-stack media-settings-stack">
-              <label class="field-group" for="mediaGlobalOffsetInput">
-                <span class="field-label">Global media offset (s)</span>
-                <input id="mediaGlobalOffsetInput" type="number" />
-              </label>
-              <label class="field-group" for="mediaDeviceOffsetInput">
-                <span class="field-label">Camera/device clock offset (s)</span>
-                <input id="mediaDeviceOffsetInput" type="number" />
-              </label>
-              <label class="field-group">
+              <div id="mediaCameraOffsetList" class="field-stack" aria-live="polite"></div>
+              <label class="field-group" for="photoDisplayDurationInput">
                 <span class="field-label">Photo export hold</span>
                 <input id="photoDisplayDurationInput" type="number" />
               </label>
@@ -271,7 +270,7 @@
               </label>
             </div>
             <p class="helper-text">
-              Positive offsets move media later on the activity timeline. Changes update preview markers and export timing immediately.
+              Known cameras can share one offset; each media item can also override its own timing. Unidentified files support per-media correction only.
             </p>
             <ul id="mediaLibraryList" class="media-library-list" aria-live="polite">
               <li class="media-library-empty">Imported photos and videos will appear here.</li>
@@ -395,6 +394,19 @@
                   </div>
                 </div>
               </article>
+              <!-- F-74: standalone text speed card, independent of the gauge dial -->
+              <article
+                id="metricOverlaySpeedTextCard"
+                class="metric-gauge-card metric-speedometer-card"
+                aria-label="Speed (text)"
+                hidden
+              >
+                <div class="metric-speed-text">
+                  <span class="metric-chip__label">Speed</span>
+                  <span id="metricOverlaySpeedTextValue" class="metric-speed-text__value">N/A</span>
+                </div>
+              </article>
+              <!-- end F-74 -->
               <article
                 id="metricOverlayHeartRateGaugeCard"
                 class="metric-gauge-card"

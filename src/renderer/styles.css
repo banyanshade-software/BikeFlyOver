@@ -405,6 +405,7 @@ body {
   height: 100%;
 }
 
+/* F-72: single CSS variable controls all overlay background opacity so one value covers all overlay cards */
 .metric-overlay {
   position: absolute;
   top: 1.25rem;
@@ -414,7 +415,9 @@ body {
   gap: 0.75rem;
   max-width: min(720px, calc(100% - 2.5rem));
   pointer-events: none;
+  --overlay-bg-alpha: 0.5;
 }
+/* end F-72 */
 
 .metric-overlay__column {
   display: grid;
@@ -435,7 +438,9 @@ body {
   padding: 0.7rem 0.85rem;
   border: 1px solid rgba(121, 189, 255, 0.24);
   border-radius: 0.85rem;
-  background: rgba(7, 18, 29, 0.82);
+  /* F-72: use overlay-bg-alpha variable so transparency is controlled from one place */
+  background: rgb(7 18 29 / var(--overlay-bg-alpha, 0.82));
+  /* end F-72 */
   backdrop-filter: blur(12px);
   box-shadow: 0 12px 24px rgba(0, 0, 0, 0.22);
 }
@@ -488,7 +493,9 @@ body {
   height: 0.8rem;
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(20, 41, 61, 0.92);
+  /* F-72: inactive gauge track uses overlay-bg-alpha */
+  background: rgb(20 41 61 / var(--overlay-bg-alpha, 0.92));
+  /* end F-72 */
 }
 
 .metric-gauge__fill {
@@ -505,19 +512,23 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  width: 130px;
+  /* F-73: width is set via CSS variable so renderer can scale it proportionally to export resolution */
+  width: var(--overlay-gauge-size, 130px);
+  /* end F-73 */
   aspect-ratio: 1;
   border-radius: 50%;
+  /* F-72: speedometer center fill and inactive arc use overlay-bg-alpha */
   background:
-    radial-gradient(circle at center, rgba(7, 18, 29, 0.96) 0 56%, transparent 57%),
+    radial-gradient(circle at center, rgb(7 18 29 / var(--overlay-bg-alpha, 0.96)) 0 56%, transparent 57%),
     conic-gradient(
       from calc(var(--speedometer-start-angle) + 360deg),
       #4ca8ff 0deg,
       #79bdff var(--speedometer-progress),
-      rgba(20, 41, 61, 0.94) var(--speedometer-progress),
-      rgba(20, 41, 61, 0.94) var(--speedometer-sweep),
+      rgb(20 41 61 / var(--overlay-bg-alpha, 0.94)) var(--speedometer-progress),
+      rgb(20 41 61 / var(--overlay-bg-alpha, 0.94)) var(--speedometer-sweep),
       transparent var(--speedometer-sweep) 360deg
     );
+  /* end F-72 */
   border: 1px solid rgba(121, 189, 255, 0.2);
   box-shadow: inset 0 0 0 1px rgba(121, 189, 255, 0.08);
 }
@@ -568,6 +579,24 @@ body {
   background: #f4f8fb;
   box-shadow: 0 0 0 3px rgba(12, 31, 48, 0.96);
 }
+
+/* F-74: large text speed display used when user selects text mode instead of the dial gauge */
+.metric-speed-text {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.7rem 1rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.metric-speed-text__value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #f4f8fb;
+  letter-spacing: -0.02em;
+}
+/* end F-74 */
 
 .metric-gauge__fill--heart-green {
   background: linear-gradient(90deg, #4bd66f, #7ef0a3);

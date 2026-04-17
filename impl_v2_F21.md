@@ -13,24 +13,28 @@ Allow the user to correct time drift between imported media timestamps and the a
 ## Implementation approach
 
 1. Add a simple drift-correction model:
-   - global media offset
-   - optional separate offset for camera/device clock
-2. Expose drift fields in the media section.
-3. Recompute aligned media timestamps whenever the offset changes.
+   - per-camera offset when camera identity can be extracted from metadata
+   - per-media override when finer control is needed
+   - per-media-only correction when camera identity is unavailable
+2. Expose drift fields in the media section at the appropriate scope.
+3. Recompute aligned media timestamps whenever a camera-level or media-level offset changes.
 4. Keep the v2 scope simple: numeric offsets and immediate preview feedback.
 
 ## Main files
 
+- `src/shared/media-metadata.js`
+- `src/shared/media-alignment.js`
+- `src/main/preload.js`
 - `src/renderer/index.html`
 - `src/renderer/renderer.js`
-- possibly a shared media-alignment helper
 
 ## Key tasks
 
-- Extend media alignment state with user-defined time offsets.
-- Add UI fields for positive/negative time correction.
+- Audit media metadata so image/video alignment prefers actual shoot/capture timestamps.
+- Extend media alignment state with per-camera offsets plus per-media overrides.
+- Add UI fields for positive/negative time correction at camera and media scope.
 - Re-run alignment after each offset change.
-- Surface corrected timestamps and alignment results in the sidebar.
+- Surface camera identity, corrected timestamps, and alignment results in the sidebar.
 
 ## Acceptance criteria
 
@@ -45,6 +49,6 @@ Allow the user to correct time drift between imported media timestamps and the a
 
 ## Implementation notes
 
-- Added shared drift-offset normalization and corrected-timestamp alignment before media is mapped onto the activity timeline.
-- Added renderer UI fields for a global media offset and a separate camera/device clock offset.
+- Added shared metadata parsing helpers so image/video alignment prefers actual shoot/capture timestamps and extracts camera identity when possible.
+- Replaced the original library-wide offset model with per-camera offsets plus per-media overrides, with per-media-only correction for unidentified files.
 - Offset edits now re-align imported media immediately, update preview markers, and feed the export payload through the same aligned media items.

@@ -20,12 +20,51 @@ function detectMediaType(filePath) {
   return null;
 }
 
+function normalizeOptionalString(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function buildCameraIdentity({ make, model, serialNumber, source }) {
+  const normalizedMake = normalizeOptionalString(make);
+  const normalizedModel = normalizeOptionalString(model);
+  const normalizedSerialNumber = normalizeOptionalString(serialNumber);
+
+  if (!normalizedMake && !normalizedModel && !normalizedSerialNumber) {
+    return {
+      cameraIdentityId: null,
+      cameraIdentityLabel: null,
+      cameraIdentitySource: null,
+    };
+  }
+
+  return {
+    cameraIdentityId: [
+      normalizedMake?.toLowerCase(),
+      normalizedModel?.toLowerCase(),
+      normalizedSerialNumber?.toLowerCase(),
+    ]
+      .filter(Boolean)
+      .join("|"),
+    cameraIdentityLabel: [
+      normalizedMake,
+      normalizedModel,
+      normalizedSerialNumber ? `#${normalizedSerialNumber}` : null,
+    ]
+      .filter(Boolean)
+      .join(" "),
+    cameraIdentitySource: source || null,
+  };
+}
+
 function normalizeTimestampResult({
   value,
   source,
   confidence = "metadata",
   originalValue,
   mediaDurationMs = null,
+  cameraIdentityId = null,
+  cameraIdentityLabel = null,
+  cameraIdentitySource = null,
 }) {
   if (!value) {
     return {
@@ -37,6 +76,9 @@ function normalizeTimestampResult({
       timestampOriginalValue: null,
       timestampConfidence: "missing",
       timestampMetadataError: null,
+      cameraIdentityId,
+      cameraIdentityLabel,
+      cameraIdentitySource,
     };
   }
 
@@ -52,6 +94,9 @@ function normalizeTimestampResult({
       timestampOriginalValue: originalValue ?? String(value),
       timestampConfidence: "invalid",
       timestampMetadataError: "Timestamp metadata could not be parsed.",
+      cameraIdentityId,
+      cameraIdentityLabel,
+      cameraIdentitySource,
     };
   }
 
@@ -64,6 +109,9 @@ function normalizeTimestampResult({
     timestampOriginalValue: originalValue ?? parsedDate.toISOString(),
     timestampConfidence: confidence,
     timestampMetadataError: null,
+    cameraIdentityId,
+    cameraIdentityLabel,
+    cameraIdentitySource,
   };
 }
 
@@ -77,37 +125,57 @@ function normalizeDurationMs(value) {
   return Math.round(parsed * 1000);
 }
 
+function selectImageTimestampCandidate(metadata = {}) {
+  const candidates = [
+    {
+      value: metadata.DateTimeOriginal,
+      source: "exif:DateTimeOriginal",
+    },
+    {
+      value: metadata.CreateDate,
+      source: "exif:CreateDate",
+    },
+    {
+      value: metadata.ModifyDate,
+      source: "exif:ModifyDate",
+      confidence: "fallback",
+    },
+  ];
+
+  return candidates.find((candidate) => candidate.value) || null;
+}
+
+function extractImageCameraIdentity(metadata = {}) {
+  return buildCameraIdentity({
+    make: metadata.Make,
+    model: metadata.Model,
+    serialNumber: metadata.BodySerialNumber ?? metadata.SerialNumber,
+    source: "exif:Make/Model",
+  });
+}
+
 async function extractImageTimestampMetadata(filePath) {
   try {
     const metadata = await exifr.parse(filePath, [
       "DateTimeOriginal",
       "CreateDate",
       "ModifyDate",
+      "Make",
+      "Model",
+      "BodySerialNumber",
+      "SerialNumber",
     ]);
-    const candidates = [
-      {
-        value: metadata?.DateTimeOriginal,
-        source: "exif:DateTimeOriginal",
-      },
-      {
-        value: metadata?.CreateDate,
-        source: "exif:CreateDate",
-      },
-      {
-        value: metadata?.ModifyDate,
-        source: "exif:ModifyDate",
-        confidence: "fallback",
-      },
-    ];
-    const selectedCandidate = candidates.find((candidate) => candidate.value);
+    const selectedCandidate = selectImageTimestampCandidate(metadata);
+    const cameraIdentity = extractImageCameraIdentity(metadata);
 
     if (!selectedCandidate) {
-      return normalizeTimestampResult({
-        mediaDurationMs,
-      });
+      return normalizeTimestampResult(cameraIdentity);
     }
 
-    return normalizeTimestampResult(selectedCandidate);
+    return normalizeTimestampResult({
+      ...selectedCandidate,
+      ...cameraIdentity,
+    });
   } catch (error) {
     return {
       mediaDurationMs: null,
@@ -119,6 +187,9 @@ async function extractImageTimestampMetadata(filePath) {
       timestampConfidence: "error",
       timestampMetadataError:
         error instanceof Error ? error.message : String(error),
+      cameraIdentityId: null,
+      cameraIdentityLabel: null,
+      cameraIdentitySource: null,
     };
   }
 }
@@ -140,7 +211,7 @@ function runFfprobe(filePath) {
         "-print_format",
         "json",
         "-show_entries",
-        "format=duration:format_tags=creation_time,com.apple.quicktime.creationdate:stream_tags=creation_time,com.apple.quicktime.creationdate",
+        "format=duration:format_tags=creation_time,com.apple.quicktime.creationdate,make,model,com.apple.quicktime.make,com.apple.quicktime.model:stream_tags=creation_time,com.apple.quicktime.creationdate,make,model,com.apple.quicktime.make,com.apple.quicktime.model",
         filePath,
       ],
       {
@@ -183,48 +254,103 @@ function runFfprobe(filePath) {
   });
 }
 
+function getTagMaps(ffprobeOutput = {}) {
+  const formatTags = ffprobeOutput?.format?.tags || {};
+  const streamTags = Array.isArray(ffprobeOutput?.streams)
+    ? ffprobeOutput.streams.flatMap((stream) => {
+        return stream?.tags ? [stream.tags] : [];
+      })
+    : [];
+
+  return {
+    formatTags,
+    streamTags,
+  };
+}
+
+function selectVideoTimestampCandidate(ffprobeOutput = {}) {
+  const { formatTags, streamTags } = getTagMaps(ffprobeOutput);
+  const candidates = [
+    {
+      value: formatTags["com.apple.quicktime.creationdate"],
+      source: "ffprobe:format.com.apple.quicktime.creationdate",
+    },
+    {
+      value: formatTags.creation_time,
+      source: "ffprobe:format.creation_time",
+      confidence: "fallback",
+    },
+    ...streamTags.flatMap((tags, index) => {
+      return [
+        {
+          value: tags["com.apple.quicktime.creationdate"],
+          source: `ffprobe:stream[${index}].com.apple.quicktime.creationdate`,
+        },
+        {
+          value: tags.creation_time,
+          source: `ffprobe:stream[${index}].creation_time`,
+          confidence: "fallback",
+        },
+      ];
+    }),
+  ];
+
+  return candidates.find((candidate) => candidate.value) || null;
+}
+
+function extractVideoCameraIdentity(ffprobeOutput = {}) {
+  const { formatTags, streamTags } = getTagMaps(ffprobeOutput);
+  const candidates = [
+    {
+      make: formatTags["com.apple.quicktime.make"] ?? formatTags.make,
+      model: formatTags["com.apple.quicktime.model"] ?? formatTags.model,
+      source:
+        formatTags["com.apple.quicktime.make"] || formatTags["com.apple.quicktime.model"]
+          ? "ffprobe:format.quicktime.make-model"
+          : "ffprobe:format.make-model",
+    },
+    ...streamTags.map((tags, index) => {
+      return {
+        make: tags["com.apple.quicktime.make"] ?? tags.make,
+        model: tags["com.apple.quicktime.model"] ?? tags.model,
+        source:
+          tags["com.apple.quicktime.make"] || tags["com.apple.quicktime.model"]
+            ? `ffprobe:stream[${index}].quicktime.make-model`
+            : `ffprobe:stream[${index}].make-model`,
+      };
+    }),
+  ];
+
+  for (const candidate of candidates) {
+    const identity = buildCameraIdentity(candidate);
+
+    if (identity.cameraIdentityId) {
+      return identity;
+    }
+  }
+
+  return buildCameraIdentity({});
+}
+
 async function extractVideoTimestampMetadata(filePath) {
   try {
     const ffprobeOutput = await runFfprobe(filePath);
-    const formatTags = ffprobeOutput?.format?.tags || {};
     const mediaDurationMs = normalizeDurationMs(ffprobeOutput?.format?.duration);
-    const streamTags = Array.isArray(ffprobeOutput?.streams)
-      ? ffprobeOutput.streams.flatMap((stream) => {
-          return stream?.tags ? [stream.tags] : [];
-        })
-      : [];
-    const candidates = [
-      {
-        value: formatTags.creation_time,
-        source: "ffprobe:format.creation_time",
-      },
-      {
-        value: formatTags["com.apple.quicktime.creationdate"],
-        source: "ffprobe:format.com.apple.quicktime.creationdate",
-      },
-      ...streamTags.flatMap((tags, index) => {
-        return [
-          {
-            value: tags.creation_time,
-            source: `ffprobe:stream[${index}].creation_time`,
-          },
-          {
-            value: tags["com.apple.quicktime.creationdate"],
-            source: `ffprobe:stream[${index}].com.apple.quicktime.creationdate`,
-          },
-        ];
-      }),
-    ];
-    const selectedCandidate = candidates.find((candidate) => candidate.value);
+    const selectedCandidate = selectVideoTimestampCandidate(ffprobeOutput);
+    const cameraIdentity = extractVideoCameraIdentity(ffprobeOutput);
 
     if (!selectedCandidate) {
-      return normalizeTimestampResult({});
+      return normalizeTimestampResult({
+        mediaDurationMs,
+        ...cameraIdentity,
+      });
     }
 
     return normalizeTimestampResult({
       ...selectedCandidate,
       mediaDurationMs,
       originalValue: selectedCandidate.value,
+      ...cameraIdentity,
     });
   } catch (error) {
     return {
@@ -237,6 +363,9 @@ async function extractVideoTimestampMetadata(filePath) {
       timestampConfidence: "error",
       timestampMetadataError:
         error instanceof Error ? error.message : String(error),
+      cameraIdentityId: null,
+      cameraIdentityLabel: null,
+      cameraIdentitySource: null,
     };
   }
 }
@@ -254,6 +383,12 @@ async function extractMediaTimestampMetadata(filePath, mediaType) {
 }
 
 module.exports = {
+  buildCameraIdentity,
   detectMediaType,
+  extractImageCameraIdentity,
   extractMediaTimestampMetadata,
+  extractVideoCameraIdentity,
+  normalizeTimestampResult,
+  selectImageTimestampCandidate,
+  selectVideoTimestampCandidate,
 };

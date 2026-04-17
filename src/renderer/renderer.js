@@ -5,13 +5,21 @@ const PARAMETER_CONFIG = EXPORT_OPTIONS?.parameterConfig || {};
 const CAMERA_SETTINGS_FIELDS = PARAMETER_CONFIG.cameraSettings || {};
 const EXPORT_SETTINGS_FIELDS = PARAMETER_CONFIG.exportSettings || {};
 const MEDIA_PRESENTATION_SETTINGS_FIELDS = PARAMETER_CONFIG.mediaPresentation || {};
-const MEDIA_ALIGNMENT_FIELDS = MEDIA_ALIGNMENT_OPTIONS?.parameterConfig || {};
+const MEDIA_ALIGNMENT_FIELD =
+  MEDIA_ALIGNMENT_OPTIONS?.parameterConfig?.offsetSeconds || null;
 // F-69: read shared terrain metadata in the renderer so terrain exaggeration stays aligned with export settings.
 const TERRAIN_SETTINGS_FIELDS = PARAMETER_CONFIG.terrainSettings || {};
 const DEFAULT_TERRAIN_PROVIDER_LABEL = "ArcGIS World Elevation";
 const DEFAULT_TERRAIN_PROVIDER_URL =
   "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer";
 // end F-69
+// F-73: gauge size constants used to scale the speedometer proportionally to the export resolution
+const _gaugeSizeCfg = PARAMETER_CONFIG.gaugeSizeConfig || {};
+const OVERLAY_GAUGE_REFERENCE_PX = _gaugeSizeCfg.referenceGaugePx || 130;
+const OVERLAY_GAUGE_MIN_PX = _gaugeSizeCfg.gaugeMinPx || 80;
+const OVERLAY_GAUGE_MAX_PX = _gaugeSizeCfg.gaugeMaxPx || 400;
+const OVERLAY_GAUGE_REFERENCE_WIDTH = _gaugeSizeCfg.referenceWidthPx || 1280;
+// end F-73
 const RENDER_MODE =
   new URLSearchParams(window.location.search).get("mode") === "export"
     ? "export"
@@ -24,8 +32,8 @@ const SPEEDOMETER_PEAK_DECAY_KPH_PER_SECOND = 0.2;
 
 const mediaLibraryState = {
   alignmentOffsets: MEDIA_ALIGNMENT_OPTIONS?.defaults || {
-    globalOffsetSeconds: 0,
-    deviceClockOffsetSeconds: 0,
+    cameraOffsetsByCameraId: {},
+    mediaOffsetsByMediaId: {},
   },
   isImporting: false,
   items: [],
@@ -88,6 +96,13 @@ const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
     key: "speedGauge",
     checkboxId: "overlaySpeedGaugeCheckbox",
     elementId: "metricOverlaySpeedGaugeCard",
+  },
+  {
+    // F-74: independent text speed card — can be shown alongside or instead of the dial
+    key: "speedText",
+    checkboxId: "overlaySpeedTextCheckbox",
+    elementId: "metricOverlaySpeedTextCard",
+    // end F-74
   },
   {
     key: "heartRateGauge",
@@ -216,9 +231,17 @@ function normalizeMediaAlignmentOffsets(rawOffsets = {}) {
   }
 
   return {
-    deviceClockOffsetSeconds: 0,
-    globalOffsetSeconds: 0,
+    cameraOffsetsByCameraId: {},
+    mediaOffsetsByMediaId: {},
   };
+}
+
+function normalizeMediaAlignmentOffsetValue(value) {
+  return normalizeConfiguredNumber(
+    value,
+    MEDIA_ALIGNMENT_FIELD,
+    MEDIA_ALIGNMENT_FIELD?.default ?? 0,
+  );
 }
 // end F-21
 
@@ -334,13 +357,7 @@ function setNumericInputValue(elementId, value) {
   }
 }
 
-function applyNumericInputDefinition(
-  elementId,
-  definition,
-  options = {},
-) {
-  const element = document.getElementById(elementId);
-
+function applyNumericDefinitionToElement(element, definition, options = {}) {
   if (!(element instanceof HTMLInputElement) || !definition) {
     return;
   }
@@ -362,6 +379,11 @@ function applyNumericInputDefinition(
   if (Number.isFinite(definition.step)) {
     element.step = String(formatValue(definition.step));
   }
+}
+
+function applyNumericInputDefinition(elementId, definition, options = {}) {
+  const element = document.getElementById(elementId);
+  applyNumericDefinitionToElement(element, definition, options);
 }
 
 function updateSpeedometerPeak(playbackState, currentSpeedKph) {
@@ -433,6 +455,7 @@ function applyOverlayVisibility(playbackState) {
   const primaryVisible = PRIMARY_METRIC_KEYS.some((key) => overlayVisibility[key]);
   const secondaryVisible =
     overlayVisibility.speedGauge ||
+    overlayVisibility.speedText ||
     (overlayVisibility.heartRateGauge && heartRateGaugeAvailable);
 
   playbackState.ui.overlayVisibility = overlayVisibility;
@@ -770,7 +793,7 @@ function formatMediaTimestampDetails(item) {
   return "Timestamp metadata pending extraction";
 }
 
-// F-21: show corrected capture times and configured offsets so users can verify drift fixes without reimporting media.
+// F-21: show camera grouping and effective correction source so users can manage per-camera and per-media drift fixes.
 function formatSignedOffsetSeconds(valueSeconds) {
   const absoluteSeconds = Math.abs(valueSeconds);
   const normalizedSeconds = Number.isInteger(absoluteSeconds)
@@ -780,16 +803,14 @@ function formatSignedOffsetSeconds(valueSeconds) {
   return `${valueSeconds >= 0 ? "+" : "-"}${normalizedSeconds}s`;
 }
 
-function formatMediaAlignmentOffsetSummary(rawOffsets = {}) {
-  const offsets = normalizeMediaAlignmentOffsets(rawOffsets);
-  const totalOffsetSeconds =
-    offsets.globalOffsetSeconds + offsets.deviceClockOffsetSeconds;
+function formatMediaCorrectionModelSummary(items) {
+  const detectedCameraCount = getDetectedCameraGroups(items).length;
 
-  if (totalOffsetSeconds === 0) {
-    return "No time correction applied.";
+  if (detectedCameraCount === 0) {
+    return "Per-media correction only until camera metadata is available.";
   }
 
-  return `Net ${formatSignedOffsetSeconds(totalOffsetSeconds)} (${formatSignedOffsetSeconds(offsets.globalOffsetSeconds)} global, ${formatSignedOffsetSeconds(offsets.deviceClockOffsetSeconds)} device).`;
+  return `${detectedCameraCount} detected camera${detectedCameraCount === 1 ? "" : "s"} with optional per-media overrides.`;
 }
 
 function formatAdjustedMediaTimestampDetails(item) {
@@ -801,7 +822,24 @@ function formatAdjustedMediaTimestampDetails(item) {
     return `Effective capture ${formatTimestamp(item.adjustedCapturedAt)} · no correction`;
   }
 
-  return `Effective capture ${formatTimestamp(item.adjustedCapturedAt)} · net ${formatSignedOffsetSeconds(item.appliedAlignmentOffsetMs / 1000)}`;
+  const sourceLabel =
+    item.appliedAlignmentOffsetSource === "media"
+      ? "per-media override"
+      : item.appliedAlignmentOffsetSource === "camera"
+        ? "camera offset"
+        : "no correction";
+
+  return `Effective capture ${formatTimestamp(item.adjustedCapturedAt)} · ${sourceLabel} ${formatSignedOffsetSeconds(item.appliedAlignmentOffsetSeconds ?? 0)}`;
+}
+
+function formatMediaCameraIdentity(item) {
+  if (!item.cameraIdentityLabel) {
+    return "Camera identity unavailable · per-media correction only";
+  }
+
+  return item.cameraIdentitySource
+    ? `${item.cameraIdentityLabel} · ${item.cameraIdentitySource}`
+    : item.cameraIdentityLabel;
 }
 // end F-21
 
@@ -2748,6 +2786,9 @@ function updateMetricOverlay(playbackState) {
   setTextContent("metricOverlayCadence", formatCadenceValue(cadence));
   setTextContent("metricOverlayTemperature", formatTemperatureValue(temperature));
   setTextContent("metricOverlaySpeed", formatOverlaySpeed(speedMetersPerSecond));
+  // F-74: keep the text speed element value in sync so switching modes shows current speed immediately
+  setTextContent("metricOverlaySpeedTextValue", formatOverlaySpeed(speedMetersPerSecond));
+  // end F-74
   if (speedGaugeDial instanceof HTMLElement) {
     speedGaugeDial.style.setProperty(
       "--speedometer-progress",
@@ -3024,14 +3065,6 @@ function applyParameterInputAttributes() {
     applyNumericInputDefinition(elementId, CAMERA_SETTINGS_FIELDS[settingKey]);
   }
 
-  applyNumericInputDefinition(
-    "mediaGlobalOffsetInput",
-    MEDIA_ALIGNMENT_FIELDS.globalOffsetSeconds,
-  );
-  applyNumericInputDefinition(
-    "mediaDeviceOffsetInput",
-    MEDIA_ALIGNMENT_FIELDS.deviceClockOffsetSeconds,
-  );
   // F-69: apply terrain parameter bounds from shared config so the terrain exaggeration control stays aligned with export settings.
   applyNumericInputDefinition(
     "terrainExaggerationInput",
@@ -3314,6 +3347,7 @@ function populateExportControls() {
 }
 
 function updateMediaLibraryUi() {
+  const mediaCameraOffsetList = document.getElementById("mediaCameraOffsetList");
   const mediaLibraryList = document.getElementById("mediaLibraryList");
   const itemCount = mediaLibraryState.items.length;
 
@@ -3329,7 +3363,7 @@ function updateMediaLibraryUi() {
   }
   setTextContent(
     "mediaOffsetSummary",
-    formatMediaAlignmentOffsetSummary(mediaLibraryState.alignmentOffsets),
+    formatMediaCorrectionModelSummary(mediaLibraryState.items),
   );
 
   setElementDisabled(
@@ -3344,6 +3378,39 @@ function updateMediaLibraryUi() {
     },
     mediaLibraryState.progress,
   );
+
+  if (mediaCameraOffsetList instanceof HTMLElement) {
+    const cameraGroups = getDetectedCameraGroups(mediaLibraryState.items);
+    mediaCameraOffsetList.innerHTML = "";
+
+    if (cameraGroups.length === 0) {
+      const emptyState = document.createElement("p");
+      emptyState.className = "media-library-meta";
+      emptyState.textContent =
+        "No camera identity extracted yet. Unidentified files can still use per-media correction.";
+      mediaCameraOffsetList.append(emptyState);
+    } else {
+      for (const cameraGroup of cameraGroups) {
+        const label = document.createElement("label");
+        label.className = "field-group";
+        const title = document.createElement("span");
+        title.className = "field-label";
+        title.textContent = `Camera offset · ${cameraGroup.cameraIdentityLabel}`;
+        const hint = document.createElement("span");
+        hint.className = "media-library-meta";
+        hint.textContent = `${cameraGroup.count} item${cameraGroup.count === 1 ? "" : "s"} from this camera`;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.dataset.offsetScope = "camera";
+        input.dataset.cameraIdentityId = cameraGroup.cameraIdentityId;
+        input.value = String(getCameraOffsetSeconds(cameraGroup.cameraIdentityId));
+        input.disabled = exportUiState.isExporting || mediaLibraryState.isImporting;
+        applyNumericDefinitionToElement(input, MEDIA_ALIGNMENT_FIELD);
+        label.append(title, hint, input);
+        mediaCameraOffsetList.append(label);
+      }
+    }
+  }
 
   if (!(mediaLibraryList instanceof HTMLUListElement)) {
     return;
@@ -3403,6 +3470,10 @@ function updateMediaLibraryUi() {
     correctionDetails.className = "media-library-meta";
     correctionDetails.textContent = formatAdjustedMediaTimestampDetails(item);
 
+    const cameraIdentity = document.createElement("p");
+    cameraIdentity.className = "media-library-meta";
+    cameraIdentity.textContent = formatMediaCameraIdentity(item);
+
     const alignmentStatus = document.createElement("p");
     alignmentStatus.className = "media-library-status";
     alignmentStatus.textContent = formatMediaAlignmentStatus(item.alignmentStatus);
@@ -3411,26 +3482,81 @@ function updateMediaLibraryUi() {
     alignmentDetails.className = "media-library-meta";
     alignmentDetails.textContent = formatMediaAlignmentDetails(item);
 
+    const perMediaOffsetGroup = document.createElement("label");
+    perMediaOffsetGroup.className = "field-group";
+    const perMediaOffsetLabel = document.createElement("span");
+    perMediaOffsetLabel.className = "field-label";
+    perMediaOffsetLabel.textContent = "Per-media offset (s)";
+    const perMediaOffsetInput = document.createElement("input");
+    perMediaOffsetInput.type = "number";
+    perMediaOffsetInput.dataset.offsetScope = "media";
+    perMediaOffsetInput.dataset.mediaItemId = item.id;
+    perMediaOffsetInput.value = String(getMediaOffsetSeconds(item.id));
+    perMediaOffsetInput.disabled =
+      exportUiState.isExporting || mediaLibraryState.isImporting;
+    applyNumericDefinitionToElement(perMediaOffsetInput, MEDIA_ALIGNMENT_FIELD);
+    perMediaOffsetGroup.append(perMediaOffsetLabel, perMediaOffsetInput);
+
     content.append(
       name,
       meta,
       status,
       timestampDetails,
+      cameraIdentity,
       correctionDetails,
       alignmentStatus,
       alignmentDetails,
+      perMediaOffsetGroup,
     );
     listItem.append(thumbnail, content);
     mediaLibraryList.append(listItem);
   }
 }
 
-// F-21: let drift offset inputs re-align the whole media library immediately so corrected markers and export timing update without reimporting.
+// F-21: let drift corrections live at camera scope by default, with per-media overrides when needed.
+function getDetectedCameraGroups(items) {
+  const groupsById = new Map();
+
+  for (const item of items) {
+    if (!item.cameraIdentityId || !item.cameraIdentityLabel) {
+      continue;
+    }
+
+    const existingGroup = groupsById.get(item.cameraIdentityId);
+
+    if (existingGroup) {
+      existingGroup.count += 1;
+      continue;
+    }
+
+    groupsById.set(item.cameraIdentityId, {
+      cameraIdentityId: item.cameraIdentityId,
+      cameraIdentityLabel: item.cameraIdentityLabel,
+      count: 1,
+    });
+  }
+
+  return Array.from(groupsById.values()).sort((left, right) => {
+    return left.cameraIdentityLabel.localeCompare(right.cameraIdentityLabel);
+  });
+}
+
+function getCameraOffsetSeconds(cameraIdentityId) {
+  return normalizeMediaAlignmentOffsetValue(
+    mediaLibraryState.alignmentOffsets.cameraOffsetsByCameraId?.[cameraIdentityId],
+  );
+}
+
+function getMediaOffsetSeconds(mediaItemId) {
+  return normalizeMediaAlignmentOffsetValue(
+    mediaLibraryState.alignmentOffsets.mediaOffsetsByMediaId?.[mediaItemId],
+  );
+}
+
 function syncMediaAlignmentControls() {
-  const offsets = normalizeMediaAlignmentOffsets(mediaLibraryState.alignmentOffsets);
-  mediaLibraryState.alignmentOffsets = offsets;
-  setNumericInputValue("mediaGlobalOffsetInput", offsets.globalOffsetSeconds);
-  setNumericInputValue("mediaDeviceOffsetInput", offsets.deviceClockOffsetSeconds);
+  mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets(
+    mediaLibraryState.alignmentOffsets,
+  );
 }
 
 function buildMediaLibraryStatusMessage() {
@@ -3438,6 +3564,7 @@ function buildMediaLibraryStatusMessage() {
     return "No media imported yet.";
   }
 
+  const detectedCameraGroups = getDetectedCameraGroups(mediaLibraryState.items);
   const alignedCount = mediaLibraryState.items.filter((item) => {
     return item.alignmentStatus === "aligned";
   }).length;
@@ -3448,7 +3575,7 @@ function buildMediaLibraryStatusMessage() {
     );
   }).length;
 
-  return `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range.`;
+  return `Library has ${mediaLibraryState.items.length} item${mediaLibraryState.items.length === 1 ? "" : "s"}; ${alignedCount} aligned, ${outOfRangeCount} out of range, ${detectedCameraGroups.length} detected camera group${detectedCameraGroups.length === 1 ? "" : "s"}.`;
 }
 
 function applyMediaAlignmentToLibrary(playbackState, mediaItems = mediaLibraryState.items) {
@@ -3470,46 +3597,58 @@ function refreshMediaLibraryPresentation(viewer, playbackState) {
   }
 }
 
+function updateCameraOffset(cameraIdentityId, rawValue) {
+  mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets({
+    ...mediaLibraryState.alignmentOffsets,
+    cameraOffsetsByCameraId: {
+      ...mediaLibraryState.alignmentOffsets.cameraOffsetsByCameraId,
+      [cameraIdentityId]: rawValue,
+    },
+  });
+}
+
+function updateMediaOffset(mediaItemId, rawValue) {
+  mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets({
+    ...mediaLibraryState.alignmentOffsets,
+    mediaOffsetsByMediaId: {
+      ...mediaLibraryState.alignmentOffsets.mediaOffsetsByMediaId,
+      [mediaItemId]: rawValue,
+    },
+  });
+}
+
 function setupMediaLibraryControls(viewer, playbackState) {
   const importMediaButton = document.getElementById("importMediaButton");
-  const mediaOffsetInputs = [
-    ["mediaGlobalOffsetInput", "globalOffsetSeconds"],
-    ["mediaDeviceOffsetInput", "deviceClockOffsetSeconds"],
-  ];
+  const mediaLibraryList = document.getElementById("mediaLibraryList");
+  const mediaCameraOffsetList = document.getElementById("mediaCameraOffsetList");
 
   syncMediaAlignmentControls();
 
-  for (const [elementId, offsetKey] of mediaOffsetInputs) {
-    const input = document.getElementById(elementId);
-    const applyOffsetChange = (rawValue) => {
-      mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets({
-        ...mediaLibraryState.alignmentOffsets,
-        [offsetKey]: rawValue,
-      });
+  const handleOffsetInputEvent = (event) => {
+    const target = event.target;
+
+    if (!(target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    if (target.dataset.offsetScope === "camera" && target.dataset.cameraIdentityId) {
+      updateCameraOffset(target.dataset.cameraIdentityId, target.value);
       applyMediaAlignmentToLibrary(playbackState);
       refreshMediaLibraryPresentation(viewer, playbackState);
-    };
+      return;
+    }
 
-    input?.addEventListener("input", (event) => {
-      const target = event.currentTarget;
+    if (target.dataset.offsetScope === "media" && target.dataset.mediaItemId) {
+      updateMediaOffset(target.dataset.mediaItemId, target.value);
+      applyMediaAlignmentToLibrary(playbackState);
+      refreshMediaLibraryPresentation(viewer, playbackState);
+    }
+  };
 
-      if (!(target instanceof HTMLInputElement)) {
-        return;
-      }
-
-      applyOffsetChange(target.value);
-    });
-
-    input?.addEventListener("change", (event) => {
-      const target = event.currentTarget;
-
-      if (!(target instanceof HTMLInputElement)) {
-        return;
-      }
-
-      applyOffsetChange(target.value);
-    });
-  }
+  mediaCameraOffsetList?.addEventListener("input", handleOffsetInputEvent);
+  mediaCameraOffsetList?.addEventListener("change", handleOffsetInputEvent);
+  mediaLibraryList?.addEventListener("input", handleOffsetInputEvent);
+  mediaLibraryList?.addEventListener("change", handleOffsetInputEvent);
 
   importMediaButton?.addEventListener("click", async () => {
     mediaLibraryState.isImporting = true;
@@ -3618,14 +3757,6 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("cameraOverviewRangeMultiplierInput", exportUiState.isExporting);
   setElementDisabled("terrainEnabledCheckbox", exportUiState.isExporting);
   setElementDisabled("terrainExaggerationInput", exportUiState.isExporting);
-  setElementDisabled(
-    "mediaGlobalOffsetInput",
-    exportUiState.isExporting || mediaLibraryState.isImporting,
-  );
-  setElementDisabled(
-    "mediaDeviceOffsetInput",
-    exportUiState.isExporting || mediaLibraryState.isImporting,
-  );
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
@@ -3634,6 +3765,7 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("overlayCadenceMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayTemperatureMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeCheckbox", exportUiState.isExporting);
+  setElementDisabled("overlaySpeedTextCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayHeartRateGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeMaxInput", exportUiState.isExporting);
   setElementDisabled(
@@ -3837,6 +3969,26 @@ function applyRendererSettings(viewer, playbackState, settings, options = {}) {
   playbackState.ui.overlayVisibility = normalizeOverlayVisibilityState(
     settings.overlayVisibility,
   );
+
+  // F-73: scale speedometer size proportionally to export width; remove override during preview so CSS default applies
+  const overlayRoot = document.getElementById("metricOverlay");
+  if (overlayRoot instanceof HTMLElement) {
+    if (Number.isFinite(settings.width) && settings.width > 0) {
+      const gaugeSize = Math.round(
+        Math.min(
+          OVERLAY_GAUGE_MAX_PX,
+          Math.max(
+            OVERLAY_GAUGE_MIN_PX,
+            OVERLAY_GAUGE_REFERENCE_PX * (settings.width / OVERLAY_GAUGE_REFERENCE_WIDTH),
+          ),
+        ),
+      );
+      overlayRoot.style.setProperty("--overlay-gauge-size", `${gaugeSize}px`);
+    } else {
+      overlayRoot.style.removeProperty("--overlay-gauge-size");
+    }
+  }
+  // end F-73
 
   if (options.resetCameraSmoothing) {
     resetFollowCameraSmoothing(playbackState);

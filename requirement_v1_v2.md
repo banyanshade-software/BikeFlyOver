@@ -23,6 +23,7 @@ These capabilities already exist in the current proof of concept and should be t
 | ID | Version | Category | Feature | Why it matters | Current state |
 | --- | --- | --- | --- | --- | --- |
 | F-01 |v3  | Import | Import user-selected TCX files from file picker | Required by the spec for real user activity input | Not implemented |
+| F-67 |v3  | Import | Import GPX files | implicit requirement | Not implemented |
 | F-02 |v3  | Import | Import FIT files | FIT is explicitly required by the spec | Not implemented |
 | F-03 |v3  | Import | Support drag-and-drop import for traces, photos, and videos | Required by the spec and improves workflow speed | Not implemented |
 | F-04 |v3  | Import | Support menu-driven import commands | Required by the spec for discoverability and desktop UX | Not implemented |
@@ -91,6 +92,11 @@ These capabilities already exist in the current proof of concept and should be t
 | F-64 | v2 | Camera | Adapt speed: when track is idle, stay less (more time acceleration), specially if user paused | Makes better videos | Implemented |
 | F-65 | v2 | Camera | Adapt camera movement: avoid too many moves ; when trace change direction, and specifically if it changes direction several time in a short time, get a higher point of view |  Makes better videos | Implemented |
 | F-66 | v2 | Camera | Add a small map view as incrustation in the video ; north should stay up and map should show the whole track|  Makes better videos | Not Implemented |
+| F-70 |v3  | Import | Import GPX files | implicit requirement | Not implemented |
+| F-71 |v3  | Import | Loading of track and media can be done by drag and drop | new requirement | Not implemented |
+| F-72 |v2  | Overlay | Overlay backgroud should be 50% transparent | new requirement | Implemented |
+| F-73 |v2  | Overlay | graphical overlay (such as speed gauge) should have a size proportional to exported video size | new requirement | Not implemented |
+| F-74 |v2  | Overlay | speed overlay as text in addition to graphical gauge (so that the user can chose) | new requirement | Not implemented |
 
 ## Suggested grouping for release planning
 

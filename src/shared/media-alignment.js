@@ -1,61 +1,103 @@
 const MEDIA_ALIGNMENT_OFFSET_FIELDS = Object.freeze({
-  globalOffsetSeconds: {
+  offsetSeconds: Object.freeze({
     type: "number",
     default: 0,
     min: -86400,
     max: 86400,
     step: 1,
-  },
-  deviceClockOffsetSeconds: {
-    type: "number",
-    default: 0,
-    min: -86400,
-    max: 86400,
-    step: 1,
-  },
+  }),
 });
 
 const MEDIA_ALIGNMENT_OFFSET_DEFAULTS = Object.freeze({
-  globalOffsetSeconds: MEDIA_ALIGNMENT_OFFSET_FIELDS.globalOffsetSeconds.default,
-  deviceClockOffsetSeconds:
-    MEDIA_ALIGNMENT_OFFSET_FIELDS.deviceClockOffsetSeconds.default,
+  cameraOffsetsByCameraId: Object.freeze({}),
+  mediaOffsetsByMediaId: Object.freeze({}),
 });
 
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-// F-21: centralize media drift offsets so preview and export reuse one corrected timestamp model.
-function normalizeMediaAlignmentOffsets(rawOffsets = {}) {
-  return Object.fromEntries(
-    Object.entries(MEDIA_ALIGNMENT_OFFSET_FIELDS).map(([key, definition]) => {
-      const parsed = Number(rawOffsets?.[key]);
-      const fallback = MEDIA_ALIGNMENT_OFFSET_DEFAULTS[key];
+// F-21: normalize per-camera and per-media offsets in one shared place so preview/export apply the same correction precedence.
+function normalizeMediaAlignmentOffsetValue(value) {
+  const parsed = Number(value);
+  const definition = MEDIA_ALIGNMENT_OFFSET_FIELDS.offsetSeconds;
 
-      return [
-        key,
-        clamp(
-          Number.isFinite(parsed) ? parsed : fallback,
-          definition.min,
-          definition.max,
-        ),
-      ];
+  return clamp(
+    Number.isFinite(parsed) ? parsed : definition.default,
+    definition.min,
+    definition.max,
+  );
+}
+
+function normalizeOffsetMap(rawOffsetMap = {}) {
+  return Object.fromEntries(
+    Object.entries(rawOffsetMap).flatMap(([key, value]) => {
+      if (typeof key !== "string" || key.length === 0) {
+        return [];
+      }
+
+      return [[key, normalizeMediaAlignmentOffsetValue(value)]];
     }),
   );
 }
 
-function getMediaAlignmentOffsetMs(rawOffsets = {}) {
+function normalizeMediaAlignmentOffsets(rawOffsets = {}) {
+  return {
+    cameraOffsetsByCameraId: normalizeOffsetMap(rawOffsets.cameraOffsetsByCameraId),
+    mediaOffsetsByMediaId: normalizeOffsetMap(rawOffsets.mediaOffsetsByMediaId),
+  };
+}
+
+function getMediaAlignmentOffsetForItem(item, rawOffsets = {}) {
   const normalizedOffsets = normalizeMediaAlignmentOffsets(rawOffsets);
+  const mediaId =
+    typeof item?.id === "string" && item.id.length > 0 ? item.id : null;
+  const cameraIdentityId =
+    typeof item?.cameraIdentityId === "string" && item.cameraIdentityId.length > 0
+      ? item.cameraIdentityId
+      : null;
+
+  if (
+    mediaId &&
+    Number.isFinite(normalizedOffsets.mediaOffsetsByMediaId[mediaId]) &&
+    normalizedOffsets.mediaOffsetsByMediaId[mediaId] !== 0
+  ) {
+    return {
+      offsetSeconds: normalizedOffsets.mediaOffsetsByMediaId[mediaId],
+      source: "media",
+    };
+  }
+
+  if (
+    cameraIdentityId &&
+    Number.isFinite(normalizedOffsets.cameraOffsetsByCameraId[cameraIdentityId]) &&
+    normalizedOffsets.cameraOffsetsByCameraId[cameraIdentityId] !== 0
+  ) {
+    return {
+      offsetSeconds: normalizedOffsets.cameraOffsetsByCameraId[cameraIdentityId],
+      source: "camera",
+    };
+  }
+
+  return {
+    offsetSeconds: 0,
+    source: "none",
+  };
+}
+
+function getMediaAlignmentOffsetMs(item, rawOffsets = {}) {
   return Math.round(
-    (normalizedOffsets.globalOffsetSeconds +
-      normalizedOffsets.deviceClockOffsetSeconds) *
-      1000,
+    getMediaAlignmentOffsetForItem(item, rawOffsets).offsetSeconds * 1000,
   );
 }
 
 function applyMediaAlignmentOffsets(item, rawOffsets = {}) {
   const normalizedOffsets = normalizeMediaAlignmentOffsets(rawOffsets);
-  const appliedAlignmentOffsetMs = getMediaAlignmentOffsetMs(normalizedOffsets);
+  const { offsetSeconds, source } = getMediaAlignmentOffsetForItem(
+    item,
+    normalizedOffsets,
+  );
+  const appliedAlignmentOffsetMs = Math.round(offsetSeconds * 1000);
   const adjustedCapturedAtTimestamp = Number.isFinite(item?.capturedAtTimestamp)
     ? item.capturedAtTimestamp + appliedAlignmentOffsetMs
     : null;
@@ -68,6 +110,8 @@ function applyMediaAlignmentOffsets(item, rawOffsets = {}) {
     adjustedCapturedAtTimestamp,
     alignmentOffsets: normalizedOffsets,
     appliedAlignmentOffsetMs,
+    appliedAlignmentOffsetSeconds: offsetSeconds,
+    appliedAlignmentOffsetSource: source,
   };
 }
 // end F-21
@@ -190,6 +234,8 @@ module.exports = {
   alignMediaItemsToTrack,
   alignMediaItemToTrack,
   findNearestTrackIndex,
+  getMediaAlignmentOffsetForItem,
   getMediaAlignmentOffsetMs,
+  normalizeMediaAlignmentOffsetValue,
   normalizeMediaAlignmentOffsets,
 };

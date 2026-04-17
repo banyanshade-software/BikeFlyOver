@@ -19,6 +19,9 @@ const {
   EXPORT_TIMING_MODES,
 } = require("../shared/export");
 const {
+  // F-72/F-73/F-74: expose gauge size constants so renderer can compute proportional gauge scaling.
+  GAUGE_SIZE_CONFIG,
+  // end F-72/F-73/F-74
   MEDIA_PRESENTATION_SETTINGS_FIELDS,
   OVERLAY_VISIBILITY_FIELDS,
 } = require("../shared/parameter-config");
@@ -59,6 +62,9 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
       parameterConfig: {
         cameraSettings: CAMERA_SETTINGS_FIELDS,
         exportSettings: EXPORT_SETTINGS_FIELDS,
+        // F-72/F-73/F-74: expose gauge size config so renderer can scale overlays proportionally.
+        gaugeSizeConfig: GAUGE_SIZE_CONFIG,
+        // end F-72/F-73/F-74
         mediaPresentation: MEDIA_PRESENTATION_SETTINGS_FIELDS,
         overlayVisibility: OVERLAY_VISIBILITY_FIELDS,
         // F-69: surface terrain parameter limits/defaults so preview/export use the same exaggeration settings.

@@ -18,6 +18,15 @@ function buildDefaults(definitions) {
   );
 }
 
+// F-72/F-73/F-74: gauge size constants for proportional scaling relative to 1280px reference width
+const GAUGE_SIZE_CONFIG = Object.freeze({
+  referenceGaugePx: 130,
+  gaugeMinPx: 80,
+  gaugeMaxPx: 400,
+  referenceWidthPx: 1280,
+});
+// end F-72/F-73/F-74
+
 const OVERLAY_VISIBILITY_FIELDS = freezeDefinitionMap({
   timeMetric: { type: "boolean", default: true },
   distanceMetric: { type: "boolean", default: true },
@@ -25,6 +34,9 @@ const OVERLAY_VISIBILITY_FIELDS = freezeDefinitionMap({
   cadenceMetric: { type: "boolean", default: true },
   temperatureMetric: { type: "boolean", default: false },
   speedGauge: { type: "boolean", default: true },
+  // F-74: separate text speed overlay that can be enabled alongside or instead of the dial gauge
+  speedText: { type: "boolean", default: false },
+  // end F-74
   heartRateGauge: { type: "boolean", default: true },
 });
 
@@ -200,6 +212,9 @@ module.exports = {
   EXPORT_ENUM_DEFAULTS,
   EXPORT_SETTINGS_DEFAULTS,
   EXPORT_SETTINGS_FIELDS,
+  // F-72/F-73/F-74: export gauge size config so renderer can compute proportional scaling.
+  GAUGE_SIZE_CONFIG,
+  // end F-72/F-73/F-74
   MEDIA_PRESENTATION_DEFAULTS,
   MEDIA_PRESENTATION_SETTINGS_FIELDS,
   OVERLAY_VISIBILITY_DEFAULTS,
