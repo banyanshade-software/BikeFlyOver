@@ -580,22 +580,6 @@ body {
   box-shadow: 0 0 0 3px rgba(12, 31, 48, 0.96);
 }
 
-/* F-74: large text speed display used when user selects text mode instead of the dial gauge */
-.metric-speed-text {
-  display: grid;
-  gap: 0.25rem;
-  padding: 0.7rem 1rem;
-  justify-items: center;
-  text-align: center;
-}
-
-.metric-speed-text__value {
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.1;
-  color: #f4f8fb;
-  letter-spacing: -0.02em;
-}
 /* end F-74 */
 
 .metric-gauge__fill--heart-green {
