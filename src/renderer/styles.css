@@ -604,6 +604,7 @@ body {
   color: #b8d8f6;
 }
 
+/* F-67: overlay card anchored to the bottom-right of the viewer showing a thumbnail or video frame for the active media item */
 .media-preview-overlay {
   position: absolute;
   right: 1.25rem;
@@ -682,6 +683,7 @@ body {
   font-size: 0.85rem;
   color: #b8d8f6;
 }
+/* end F-67 */
 
 .export-mode .app-header,
 .export-mode .summary-panel,

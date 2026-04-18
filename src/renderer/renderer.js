@@ -1043,6 +1043,7 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
   };
 }
 
+// F-67: compute the single active media item whose aligned timestamp window covers the current playback position
 function getActivePreviewMediaPresentation(playbackTimestamp) {
   const settings = readMediaPresentationSettings();
   let bestMatch = null;
@@ -1091,7 +1092,9 @@ function getActivePreviewMediaPresentation(playbackTimestamp) {
     ),
   };
 }
+// end F-67
 
+// F-67: resolve a safe renderer-side preview URL for each media item so the overlay can display images and videos without privileged paths
 function decorateMediaItemsForPreview(mediaItems) {
   return mediaItems.map((item) => {
     return {
@@ -1103,6 +1106,7 @@ function decorateMediaItemsForPreview(mediaItems) {
     };
   });
 }
+// end F-67
 
 function createMediaPreviewMarkerImage(item) {
   const kindLabel = item.mediaType === "video" ? "VIDEO" : "PHOTO";
@@ -1176,6 +1180,7 @@ function setMediaPreviewEntitiesVisibility(visible) {
   }
 }
 
+// F-67: hide and clean up the preview overlay when no media is active at the current playback position
 function hideMediaPreviewOverlay() {
   mediaLibraryState.previewRequestToken += 1;
   const overlayElement = document.getElementById("mediaPreviewOverlay");
@@ -1201,6 +1206,7 @@ function hideMediaPreviewOverlay() {
 
   mediaLibraryState.activePreviewItemId = null;
 }
+// end F-67
 
 function resolveMediaPresentationForRender(playbackState, options = {}) {
   const hasExplicitMediaPresentation = Object.prototype.hasOwnProperty.call(
@@ -1222,6 +1228,7 @@ function resolveMediaPresentationForRender(playbackState, options = {}) {
   return getActivePreviewMediaPresentation(playbackState.currentTimestamp);
 }
 
+// F-67: update the badge, filename, and aligned-time labels on the preview card
 function updateMediaPreviewMetadata(activeItem, presentation) {
   setTextContent("mediaPreviewType", formatMediaType(activeItem.mediaType));
   setTextContent("mediaPreviewName", activeItem.fileName);
@@ -1250,6 +1257,7 @@ function updateMediaPreviewMetadata(activeItem, presentation) {
       : "Aligned media preview",
   );
 }
+// end F-67
 
 function waitForAnimationFrame() {
   return new Promise((resolve) => {
@@ -1374,6 +1382,7 @@ async function syncPreviewVideoFrame(videoElement, item, currentTimeMs) {
   await waitForAnimationFrame();
 }
 
+// F-67: async overlay driver - shows image thumbnail or seeked video frame for the active media item, hides when no active item
 async function updateMediaPreviewOverlay(playbackState, options = {}) {
   const requestToken = ++mediaLibraryState.previewRequestToken;
   const overlayElement = document.getElementById("mediaPreviewOverlay");
@@ -1486,6 +1495,7 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
 
   overlayElement.hidden = false;
 }
+// end F-67
 
 function renderSummary(sampleTrack) {
   const summaryList = document.getElementById("summaryList");
