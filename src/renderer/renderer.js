@@ -657,6 +657,18 @@ function getPlaybackProgressRatio(playbackState) {
   );
 }
 
+function getFullPlaybackProgressRatio(playbackState, timestamp) {
+  if (playbackState.fullDurationMs <= 0) {
+    return 1;
+  }
+
+  return clampProgressRatio(
+    ((timestamp ?? playbackState.currentTimestamp) -
+      playbackState.fullStartTimestamp) /
+      playbackState.fullDurationMs,
+  );
+}
+
 function progressRatioToTimestamp(playbackState, progressRatio) {
   if (playbackState.durationMs <= 0) {
     return playbackState.startTimestamp;
@@ -668,8 +680,26 @@ function progressRatioToTimestamp(playbackState, progressRatio) {
   );
 }
 
+function fullProgressRatioToTimestamp(playbackState, progressRatio) {
+  if (playbackState.fullDurationMs <= 0) {
+    return playbackState.fullStartTimestamp;
+  }
+
+  return (
+    playbackState.fullStartTimestamp +
+    playbackState.fullDurationMs * clampProgressRatio(progressRatio)
+  );
+}
+
 function sliderValueToTimestamp(playbackState, sliderValue) {
   return progressRatioToTimestamp(
+    playbackState,
+    Number(sliderValue) / TIMELINE_SLIDER_MAX,
+  );
+}
+
+function fullSliderValueToTimestamp(playbackState, sliderValue) {
+  return fullProgressRatioToTimestamp(
     playbackState,
     Number(sliderValue) / TIMELINE_SLIDER_MAX,
   );
@@ -688,6 +718,55 @@ function timestampToSliderValue(playbackState, timestamp) {
         ),
     ),
   );
+}
+
+function fullTimestampToSliderValue(playbackState, timestamp) {
+  if (playbackState.fullDurationMs <= 0) {
+    return TIMELINE_SLIDER_MAX;
+  }
+
+  return String(
+    Math.round(
+      TIMELINE_SLIDER_MAX *
+        getFullPlaybackProgressRatio(playbackState, timestamp),
+    ),
+  );
+}
+
+function getTrackpointIndexAtOrBefore(trackpoints, timestamp) {
+  let low = 0;
+  let high = trackpoints.length - 1;
+
+  while (low < high) {
+    const middle = Math.floor((low + high + 1) / 2);
+
+    if (trackpoints[middle].timestamp <= timestamp) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return low;
+}
+
+function appendUniqueRoutePosition(Cesium, positions, position) {
+  if (!position) {
+    return;
+  }
+
+  const lastPosition = positions[positions.length - 1];
+
+  if (
+    !lastPosition ||
+    !Cesium.Cartesian3.equalsEpsilon(
+      lastPosition,
+      position,
+      Cesium.Math.EPSILON7,
+    )
+  ) {
+    positions.push(position);
+  }
 }
 
 function formatFrameProgress(currentFrame, totalFrames) {
@@ -926,6 +1005,10 @@ function readMediaPresentationSettings() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  // F-76
+  const mediaAnimationEffectSelect = document.getElementById("mediaAnimationEffectSelect");
+  const photoAllowCropCheckbox = document.getElementById("photoAllowCropCheckbox");
+  // end F-76
   const photoDisplayDefinition =
     MEDIA_PRESENTATION_SETTINGS_FIELDS.photoDisplayDurationMs;
   const parsedPhotoDisplaySeconds =
@@ -948,6 +1031,16 @@ function readMediaPresentationSettings() {
         : EXPORT_OPTIONS.defaults.photoKenBurnsEnabled,
     photoKenBurnsScale:
       MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale?.default ?? 0,
+    // F-76
+    animationEffect:
+      mediaAnimationEffectSelect instanceof HTMLSelectElement
+        ? mediaAnimationEffectSelect.value
+        : EXPORT_OPTIONS.defaults.animationEffect,
+    imageFit:
+      photoAllowCropCheckbox instanceof HTMLInputElement && photoAllowCropCheckbox.checked
+        ? "cover"
+        : "contain",
+    // end F-76
   };
 }
 
@@ -1004,14 +1097,63 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
   );
   let opacity = 1;
   let translateY = 0;
+  let translateX = 0;
   let scale = 1;
+
+  // F-76: compute effect-specific transforms based on the chosen animation effect.
+  const effect = settings?.animationEffect ?? "slide-up";
+
+  function applyEnterTransforms(p) {
+    switch (effect) {
+      case "slide-up":
+        translateY = 18 * (1 - p);
+        scale = 0.94 + 0.06 * p;
+        break;
+      case "slide-down":
+        translateY = -18 * (1 - p);
+        scale = 0.94 + 0.06 * p;
+        break;
+      case "slide-left":
+        translateX = 24 * (1 - p);
+        break;
+      case "zoom":
+        scale = 0.85 + 0.15 * p;
+        break;
+      case "fade":
+      case "none":
+      default:
+        break;
+    }
+  }
+
+  function applyExitTransforms(p) {
+    switch (effect) {
+      case "slide-up":
+        translateY = -10 * p;
+        scale = 1 + 0.03 * p;
+        break;
+      case "slide-down":
+        translateY = 10 * p;
+        scale = 1 + 0.03 * p;
+        break;
+      case "slide-left":
+        translateX = -18 * p;
+        break;
+      case "zoom":
+        scale = 1 + 0.1 * p;
+        break;
+      case "fade":
+      case "none":
+      default:
+        break;
+    }
+  }
 
   if (timeline.enterDurationMs > 0 && safeElapsedMs < timeline.enterDurationMs) {
     const enterProgress = safeElapsedMs / timeline.enterDurationMs;
 
     opacity = enterProgress;
-    translateY = 18 * (1 - enterProgress);
-    scale = 0.94 + 0.06 * enterProgress;
+    applyEnterTransforms(enterProgress);
   } else if (timeline.exitDurationMs > 0 && safeElapsedMs > exitStartMs) {
     const exitProgress = Math.min(
       1,
@@ -1019,15 +1161,17 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
     );
 
     opacity = 1 - exitProgress;
-    translateY = -10 * exitProgress;
-    scale = 1 + 0.03 * exitProgress;
+    applyExitTransforms(exitProgress);
   }
+  // end F-76
 
   const progressRatio =
     timeline.totalDurationMs > 0 ? safeElapsedMs / timeline.totalDurationMs : 1;
 
   return {
     elapsedMs: safeElapsedMs,
+    // F-76: include translateX and imageFit so the overlay renderer doesn't need to re-read settings.
+    imageFit: settings?.imageFit ?? "contain",
     imageScale:
       item.mediaType === "image" && settings.photoKenBurnsEnabled
         ? 1 + settings.photoKenBurnsScale * progressRatio
@@ -1035,7 +1179,9 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
     opacity,
     scale,
     totalDurationMs: timeline.totalDurationMs,
+    translateX,
     translateY,
+    // end F-76
     videoCurrentTimeMs:
       item.mediaType === "video"
         ? Math.min(safeElapsedMs, getMediaDurationMs(item))
@@ -1415,12 +1561,17 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
     return;
   }
 
-  const { item: activeItem, imageScale, opacity, scale, translateY } = presentation;
+  const { item: activeItem, imageFit, imageScale, opacity, scale, translateX, translateY } = presentation;
 
   cardElement.style.opacity = String(opacity);
-  cardElement.style.transform = `translateY(${translateY}px) scale(${scale})`;
+  cardElement.style.transform = `translateY(${translateY}px) translateX(${translateX ?? 0}px) scale(${scale})`;
   imageElement.style.transform = `scale(${imageScale})`;
   videoElement.style.transform = `scale(${imageScale})`;
+  // F-76: apply image fit (contain = letterbox, cover = crop to fill).
+  imageElement.style.backgroundSize = imageFit === "cover" ? "cover" : "contain";
+  imageElement.style.backgroundColor = "#000";
+  videoElement.style.objectFit = imageFit === "cover" ? "cover" : "contain";
+  // end F-76
 
   updateMediaPreviewMetadata(activeItem, presentation);
 
@@ -1539,15 +1690,18 @@ function renderSummary(sampleTrack) {
 }
 
 function createPlaybackState(trackpoints, options = {}) {
-  const startTimestamp = trackpoints[0].timestamp;
-  const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
+  const fullStartTimestamp = trackpoints[0].timestamp;
+  const fullEndTimestamp = trackpoints[trackpoints.length - 1].timestamp;
 
   return {
     trackpoints,
-    startTimestamp,
-    endTimestamp,
-    durationMs: endTimestamp - startTimestamp,
-    currentTimestamp: startTimestamp,
+    fullStartTimestamp,
+    fullEndTimestamp,
+    fullDurationMs: fullEndTimestamp - fullStartTimestamp,
+    startTimestamp: fullStartTimestamp,
+    endTimestamp: fullEndTimestamp,
+    durationMs: fullEndTimestamp - fullStartTimestamp,
+    currentTimestamp: fullStartTimestamp,
     currentIndex: 0,
     currentSample: trackpoints[0],
     isPlaying: false,
@@ -1572,6 +1726,8 @@ function createPlaybackState(trackpoints, options = {}) {
       ),
     },
     route: {
+      afterRangeEntity: null,
+      beforeRangeEntity: null,
       endEntity: null,
       startEntity: null,
     },
@@ -1601,7 +1757,7 @@ function createPlaybackState(trackpoints, options = {}) {
         options.speedGaugeMaxKph ?? EXPORT_OPTIONS.defaults.speedGaugeMaxKph,
       ),
       speedGaugePeakKph: 0,
-      speedGaugePeakTimestamp: startTimestamp,
+      speedGaugePeakTimestamp: fullStartTimestamp,
     },
   };
 }
@@ -1718,9 +1874,7 @@ function applyRoutePositionsToEntities(playbackState) {
   playbackState.routePositions = routePositions;
   playbackState.camera.routeBoundingSphere = routeBoundingSphere;
 
-  if (playbackState.camera.routeEntity?.polyline) {
-    playbackState.camera.routeEntity.polyline.positions = routePositions;
-  }
+  syncRouteRangeEntities(playbackState);
 
   if (playbackState.route.startEntity) {
     playbackState.route.startEntity.position = startPosition;
@@ -1756,16 +1910,53 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
   const routeBoundingSphere = Cesium.BoundingSphere.fromPoints(routePositions);
   const startPosition = routePositions[0];
   const endPosition = routePositions[routePositions.length - 1];
+  playbackState.routePositions = routePositions;
+
+  const {
+    activePositions,
+    afterPositions,
+    beforePositions,
+  } = getRangeRoutePositions(playbackState);
 
   const routeEntity = viewer.entities.add({
     id: "sample-route",
-    name: "Sample TCX route",
+    name: "Selected route range",
     polyline: {
-      positions: routePositions,
-      width: 2.5,
+      positions: activePositions,
+      width: 4, //2.5, xxx
       clampToGround: true,
       material: Cesium.Color.fromCssColorString("#ffffff").withAlpha(0.95),
     },
+  });
+
+  const beforeRangeEntity = viewer.entities.add({
+    id: "sample-route-before-range",
+    name: "Route before selected range",
+    polyline: {
+      positions: beforePositions,
+      width: 3,
+      clampToGround: true,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.fromCssColorString("#86a9c7").withAlpha(0.9),
+        dashLength: 18,
+      }),
+    },
+    show: beforePositions.length >= 2,
+  });
+
+  const afterRangeEntity = viewer.entities.add({
+    id: "sample-route-after-range",
+    name: "Route after selected range",
+    polyline: {
+      positions: afterPositions,
+      width: 3,
+      clampToGround: true,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.fromCssColorString("#86a9c7").withAlpha(0.9),
+        dashLength: 18,
+      }),
+    },
+    show: afterPositions.length >= 2,
   });
 
   const startEntity = viewer.entities.add({
@@ -1794,6 +1985,8 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
     },
   });
 
+  playbackState.route.beforeRangeEntity = beforeRangeEntity;
+  playbackState.route.afterRangeEntity = afterRangeEntity;
   playbackState.route.startEntity = startEntity;
   playbackState.route.endEntity = endEntity;
 
@@ -2663,12 +2856,163 @@ function interpolateTrackpoint(playbackState) {
   // end F-69
 }
 
+function getRouteDisplayPositionAtTimestamp(Cesium, playbackState, timestamp) {
+  const clampedTimestamp = Math.min(
+    playbackState.fullEndTimestamp,
+    Math.max(playbackState.fullStartTimestamp, timestamp),
+  );
+  const { trackpoints } = playbackState;
+  const currentIndex = getTrackpointIndexAtOrBefore(trackpoints, clampedTimestamp);
+  const startTrackpoint = trackpoints[currentIndex];
+  const endTrackpoint = trackpoints[Math.min(currentIndex + 1, trackpoints.length - 1)];
+
+  if (
+    currentIndex >= trackpoints.length - 1 ||
+    startTrackpoint.timestamp === endTrackpoint.timestamp
+  ) {
+    return (
+      playbackState.routePositions[currentIndex] ||
+      toRouteDisplayPosition(
+        Cesium,
+        startTrackpoint,
+        getTerrainDisplayHeight(playbackState, currentIndex),
+      )
+    );
+  }
+
+  const segmentRatio = Math.min(
+    1,
+    Math.max(
+      0,
+      (clampedTimestamp - startTrackpoint.timestamp) /
+        (endTrackpoint.timestamp - startTrackpoint.timestamp),
+    ),
+  );
+  const interpolatedSample = {
+    latitude:
+      startTrackpoint.latitude +
+      (endTrackpoint.latitude - startTrackpoint.latitude) * segmentRatio,
+    longitude:
+      startTrackpoint.longitude +
+      (endTrackpoint.longitude - startTrackpoint.longitude) * segmentRatio,
+  };
+  const startDisplayHeight = getTerrainDisplayHeight(playbackState, currentIndex);
+  const endDisplayHeight = getTerrainDisplayHeight(
+    playbackState,
+    Math.min(currentIndex + 1, trackpoints.length - 1),
+  );
+
+  return toRouteDisplayPosition(
+    Cesium,
+    interpolatedSample,
+    startDisplayHeight + (endDisplayHeight - startDisplayHeight) * segmentRatio,
+  );
+}
+
+function getRangeRoutePositions(playbackState) {
+  const Cesium = window.Cesium;
+  const beforePositions = [];
+  const activePositions = [];
+  const afterPositions = [];
+  const { routePositions, trackpoints } = playbackState;
+  const rangeStartIndex = getTrackpointIndexAtOrBefore(
+    trackpoints,
+    playbackState.startTimestamp,
+  );
+  const rangeEndIndex = getTrackpointIndexAtOrBefore(
+    trackpoints,
+    playbackState.endTimestamp,
+  );
+  const rangeStartPosition = getRouteDisplayPositionAtTimestamp(
+    Cesium,
+    playbackState,
+    playbackState.startTimestamp,
+  );
+  const rangeEndPosition = getRouteDisplayPositionAtTimestamp(
+    Cesium,
+    playbackState,
+    playbackState.endTimestamp,
+  );
+
+  if (playbackState.startTimestamp > playbackState.fullStartTimestamp) {
+    for (let index = 0; index <= rangeStartIndex; index += 1) {
+      appendUniqueRoutePosition(Cesium, beforePositions, routePositions[index]);
+    }
+    appendUniqueRoutePosition(Cesium, beforePositions, rangeStartPosition);
+  }
+
+  appendUniqueRoutePosition(Cesium, activePositions, rangeStartPosition);
+  for (let index = rangeStartIndex + 1; index <= rangeEndIndex; index += 1) {
+    appendUniqueRoutePosition(Cesium, activePositions, routePositions[index]);
+  }
+  appendUniqueRoutePosition(Cesium, activePositions, rangeEndPosition);
+
+  if (playbackState.endTimestamp < playbackState.fullEndTimestamp) {
+    appendUniqueRoutePosition(Cesium, afterPositions, rangeEndPosition);
+    for (
+      let index = Math.min(rangeEndIndex + 1, routePositions.length - 1);
+      index < routePositions.length;
+      index += 1
+    ) {
+      appendUniqueRoutePosition(Cesium, afterPositions, routePositions[index]);
+    }
+  }
+
+  return {
+    activePositions,
+    afterPositions,
+    beforePositions,
+    rangeStartPosition,
+  };
+}
+
+function syncRouteRangeEntities(playbackState) {
+  const { activePositions, afterPositions, beforePositions } =
+    getRangeRoutePositions(playbackState);
+
+  if (playbackState.camera.routeEntity?.polyline) {
+    playbackState.camera.routeEntity.polyline.positions = activePositions;
+    playbackState.camera.routeEntity.show = activePositions.length >= 2;
+  }
+
+  if (playbackState.route.beforeRangeEntity?.polyline) {
+    playbackState.route.beforeRangeEntity.polyline.positions = beforePositions;
+    playbackState.route.beforeRangeEntity.show = beforePositions.length >= 2;
+  }
+
+  if (playbackState.route.afterRangeEntity?.polyline) {
+    playbackState.route.afterRangeEntity.polyline.positions = afterPositions;
+    playbackState.route.afterRangeEntity.show = afterPositions.length >= 2;
+  }
+
+  return activePositions;
+}
+
 function buildPlayedRoutePositions(Cesium, playbackState) {
   const playedPositions = playbackState.playedRoutePositionsScratch;
   playedPositions.length = 0;
+  const rangeStartIndex = getTrackpointIndexAtOrBefore(
+    playbackState.trackpoints,
+    playbackState.startTimestamp,
+  );
+  const rangeStartPosition = getRouteDisplayPositionAtTimestamp(
+    Cesium,
+    playbackState,
+    playbackState.startTimestamp,
+  );
 
-  for (let index = 0; index <= playbackState.currentIndex; index += 1) {
-    playedPositions.push(playbackState.routePositions[index]);
+  appendUniqueRoutePosition(Cesium, playedPositions, rangeStartPosition);
+
+  for (
+    let index = rangeStartIndex + 1;
+    index <= playbackState.currentIndex;
+    index += 1
+  ) {
+    appendUniqueRoutePosition(
+      Cesium,
+      playedPositions,
+      playbackState.routePositions[index],
+    );
   }
 
   if (
@@ -2676,7 +3020,11 @@ function buildPlayedRoutePositions(Cesium, playbackState) {
     playbackState.currentSamplePosition !==
       playbackState.routePositions[playbackState.currentIndex]
   ) {
-    playedPositions.push(playbackState.currentSamplePosition);
+    appendUniqueRoutePosition(
+      Cesium,
+      playedPositions,
+      playbackState.currentSamplePosition,
+    );
   }
 
   return playedPositions;
@@ -2705,7 +3053,7 @@ function addPlaybackEntities(viewer, playbackState) {
       positions: new Cesium.CallbackProperty(() => {
         return buildPlayedRoutePositions(Cesium, playbackState);
       }, false),
-      width: 10,
+      width: 40, // width of completed route
       clampToGround: true,
       material: new Cesium.PolylineGlowMaterialProperty({
         color: Cesium.Color.fromCssColorString("#2c7dff"),
@@ -2728,6 +3076,13 @@ function updatePlaybackUI(playbackState) {
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
   const progressRatio = getPlaybackProgressRatio(playbackState);
   const timelineSlider = document.getElementById("timelineSlider");
+  const timelineRangeStartSlider = document.getElementById(
+    "timelineRangeStartSlider",
+  );
+  const timelineRangeEndSlider = document.getElementById("timelineRangeEndSlider");
+  const isFullRangeSelected =
+    playbackState.startTimestamp === playbackState.fullStartTimestamp &&
+    playbackState.endTimestamp === playbackState.fullEndTimestamp;
 
   setTextContent("playbackStatus", playbackState.isPlaying ? "Playing" : "Paused");
   setTextContent("playbackProgress", formatProgress(progressRatio));
@@ -2744,6 +3099,18 @@ function updatePlaybackUI(playbackState) {
   setTextContent("playbackSpeed", `${playbackState.speedMultiplier}x track time`);
   setTextContent("timelineElapsed", formatDuration(elapsedMs));
   setTextContent("timelineDuration", formatDuration(playbackState.durationMs));
+  setTextContent(
+    "timelineRangeStartValue",
+    formatDuration(playbackState.startTimestamp - playbackState.fullStartTimestamp),
+  );
+  setTextContent(
+    "timelineRangeEndValue",
+    formatDuration(playbackState.endTimestamp - playbackState.fullStartTimestamp),
+  );
+  setTextContent(
+    "timelineRangeStatus",
+    isFullRangeSelected ? "Full activity" : "Selected range",
+  );
   setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
 
   if (
@@ -2753,6 +3120,20 @@ function updatePlaybackUI(playbackState) {
     timelineSlider.value = timestampToSliderValue(
       playbackState,
       playbackState.currentTimestamp,
+    );
+  }
+
+  if (timelineRangeStartSlider instanceof HTMLInputElement) {
+    timelineRangeStartSlider.value = fullTimestampToSliderValue(
+      playbackState,
+      playbackState.startTimestamp,
+    );
+  }
+
+  if (timelineRangeEndSlider instanceof HTMLInputElement) {
+    timelineRangeEndSlider.value = fullTimestampToSliderValue(
+      playbackState,
+      playbackState.endTimestamp,
     );
   }
 }
@@ -2865,6 +3246,35 @@ function setPlaybackTimestamp(viewer, playbackState, timestamp, options = {}) {
   syncPlaybackState(viewer, playbackState, options);
 }
 
+function setPlaybackRange(
+  viewer,
+  playbackState,
+  nextStartTimestamp,
+  nextEndTimestamp,
+  options = {},
+) {
+  const clampedStartTimestamp = Math.min(
+    playbackState.fullEndTimestamp,
+    Math.max(playbackState.fullStartTimestamp, nextStartTimestamp),
+  );
+  const clampedEndTimestamp = Math.min(
+    playbackState.fullEndTimestamp,
+    Math.max(clampedStartTimestamp, nextEndTimestamp),
+  );
+
+  playbackState.startTimestamp = clampedStartTimestamp;
+  playbackState.endTimestamp = clampedEndTimestamp;
+  playbackState.durationMs = clampedEndTimestamp - clampedStartTimestamp;
+  playbackState.currentTimestamp = Math.min(
+    playbackState.endTimestamp,
+    Math.max(playbackState.startTimestamp, playbackState.currentTimestamp),
+  );
+  playbackState.lastFrameTime = null;
+  resetFollowCameraSmoothing(playbackState);
+  syncRouteRangeEntities(playbackState);
+  syncPlaybackState(viewer, playbackState, options);
+}
+
 function stopPlayback(playbackState) {
   if (playbackState.animationFrameId !== null) {
     window.cancelAnimationFrame(playbackState.animationFrameId);
@@ -2929,6 +3339,10 @@ function tickPlayback(viewer, playbackState, frameTime) {
 function startPlayback(viewer, playbackState) {
   if (playbackState.isPlaying && playbackState.animationFrameId !== null) {
     return;
+  }
+
+  if (playbackState.currentTimestamp >= playbackState.endTimestamp) {
+    setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp);
   }
 
   playbackState.isPlaying = true;
@@ -3004,6 +3418,13 @@ function setupPlaybackControls(viewer, playbackState) {
   const restartButton = document.getElementById("restartButton");
   const cameraModeButton = document.getElementById("cameraModeButton");
   const timelineSlider = document.getElementById("timelineSlider");
+  const timelineRangeStartSlider = document.getElementById(
+    "timelineRangeStartSlider",
+  );
+  const timelineRangeEndSlider = document.getElementById("timelineRangeEndSlider");
+  const resetTimelineRangeButton = document.getElementById(
+    "resetTimelineRangeButton",
+  );
 
   playPauseButton?.addEventListener("click", () => {
     if (playbackState.isPlaying) {
@@ -3057,6 +3478,123 @@ function setupPlaybackControls(viewer, playbackState) {
       endTimelineInteraction(viewer, playbackState);
     });
   }
+
+  if (timelineRangeStartSlider instanceof HTMLInputElement) {
+    timelineRangeStartSlider.addEventListener("pointerdown", () => {
+      beginTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeStartSlider.addEventListener("pointerup", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeStartSlider.addEventListener("keydown", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        beginTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeStartSlider.addEventListener("keyup", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        endTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeStartSlider.addEventListener("input", (event) => {
+      beginTimelineInteraction(viewer, playbackState);
+      const nextStartTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        nextStartTimestamp,
+        Math.max(nextStartTimestamp, playbackState.endTimestamp),
+      );
+    });
+
+    timelineRangeStartSlider.addEventListener("change", (event) => {
+      const nextStartTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        nextStartTimestamp,
+        Math.max(nextStartTimestamp, playbackState.endTimestamp),
+      );
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeStartSlider.addEventListener("blur", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+  }
+
+  if (timelineRangeEndSlider instanceof HTMLInputElement) {
+    timelineRangeEndSlider.addEventListener("pointerdown", () => {
+      beginTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeEndSlider.addEventListener("pointerup", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeEndSlider.addEventListener("keydown", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        beginTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeEndSlider.addEventListener("keyup", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        endTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeEndSlider.addEventListener("input", (event) => {
+      beginTimelineInteraction(viewer, playbackState);
+      const nextEndTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        Math.min(playbackState.startTimestamp, nextEndTimestamp),
+        nextEndTimestamp,
+      );
+    });
+
+    timelineRangeEndSlider.addEventListener("change", (event) => {
+      const nextEndTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        Math.min(playbackState.startTimestamp, nextEndTimestamp),
+        nextEndTimestamp,
+      );
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeEndSlider.addEventListener("blur", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+  }
+
+  resetTimelineRangeButton?.addEventListener("click", () => {
+    setPlaybackRange(
+      viewer,
+      playbackState,
+      playbackState.fullStartTimestamp,
+      playbackState.fullEndTimestamp,
+    );
+  });
 }
 
 function applyParameterInputAttributes() {
@@ -3305,6 +3843,10 @@ function populateExportControls() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  // F-76
+  const mediaAnimationEffectSelect = document.getElementById("mediaAnimationEffectSelect");
+  const photoAllowCropCheckbox = document.getElementById("photoAllowCropCheckbox");
+  // end F-76
 
   populateSelect(
     resolutionSelect,
@@ -3352,6 +3894,18 @@ function populateExportControls() {
   if (photoKenBurnsCheckbox instanceof HTMLInputElement) {
     photoKenBurnsCheckbox.checked = EXPORT_OPTIONS.defaults.photoKenBurnsEnabled;
   }
+
+  // F-76: initialise animation effect select and crop checkbox.
+  if (mediaAnimationEffectSelect instanceof HTMLSelectElement) {
+    mediaAnimationEffectSelect.value =
+      EXPORT_OPTIONS.defaults.animationEffect ?? "slide-up";
+  }
+
+  if (photoAllowCropCheckbox instanceof HTMLInputElement) {
+    photoAllowCropCheckbox.checked =
+      (EXPORT_OPTIONS.defaults.imageFit ?? "contain") === "cover";
+  }
+  // end F-76
 
   updateExportTimingControls();
 }
@@ -3769,6 +4323,10 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("terrainExaggerationInput", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
+  // F-76
+  setElementDisabled("mediaAnimationEffectSelect", exportUiState.isExporting);
+  setElementDisabled("photoAllowCropCheckbox", exportUiState.isExporting);
+  // end F-76
   setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayDistanceMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayAltitudeMetricCheckbox", exportUiState.isExporting);
@@ -3820,6 +4378,8 @@ function readExportSettings() {
       cameraModeSelect instanceof HTMLSelectElement
         ? cameraModeSelect.value
         : EXPORT_OPTIONS.defaults.cameraMode,
+    rangeStartTimestamp: window.playbackState?.startTimestamp,
+    rangeEndTimestamp: window.playbackState?.endTimestamp,
     mediaItems: mediaLibraryState.items,
     overlayVisibility: normalizeOverlayVisibilityState(
       window.playbackState?.ui?.overlayVisibility,
@@ -3833,6 +4393,10 @@ function readExportSettings() {
     // end F-69
     photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
     photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
+    // F-76
+    animationEffect: mediaPresentationSettings.animationEffect,
+    imageFit: mediaPresentationSettings.imageFit,
+    // end F-76
   };
 }
 
@@ -3844,6 +4408,10 @@ function setupExportControls() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  // F-76
+  const mediaAnimationEffectSelect = document.getElementById("mediaAnimationEffectSelect");
+  const photoAllowCropCheckbox = document.getElementById("photoAllowCropCheckbox");
+  // end F-76
 
   timingModeSelect?.addEventListener("change", () => {
     updateExportTimingControls();
@@ -3859,6 +4427,18 @@ function setupExportControls() {
       void updateMediaPreviewOverlay(window.playbackState);
     }
   });
+  // F-76: refresh overlay preview when animation effect or crop mode changes.
+  mediaAnimationEffectSelect?.addEventListener("change", () => {
+    if (window.playbackState) {
+      void updateMediaPreviewOverlay(window.playbackState);
+    }
+  });
+  photoAllowCropCheckbox?.addEventListener("change", () => {
+    if (window.playbackState) {
+      void updateMediaPreviewOverlay(window.playbackState);
+    }
+  });
+  // end F-76
 
   window.bikeFlyOverApp?.onExportStatus((statusUpdate) => {
     updateExportUi(statusUpdate);

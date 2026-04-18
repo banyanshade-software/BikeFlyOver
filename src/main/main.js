@@ -10,6 +10,7 @@ const {
   detectMediaType,
   extractMediaTimestampMetadata,
 } = require("../shared/media-metadata");
+
 const {
   EXPORT_DEFAULTS,
   EXPORT_TIMING_MODES,

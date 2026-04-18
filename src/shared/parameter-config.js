@@ -190,6 +190,16 @@ const MEDIA_PRESENTATION_SETTINGS_FIELDS = freezeDefinitionMap({
     default: 0.10,
     min: 0,
   },
+  // F-76: animation effect and image fit mode.
+  animationEffect: {
+    type: "string",
+    default: "slide-up",
+  },
+  imageFit: {
+    type: "string",
+    default: "contain",
+  },
+  // end F-76
 });
 
 const EXPORT_ENUM_DEFAULTS = Object.freeze({

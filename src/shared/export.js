@@ -100,6 +100,10 @@ const EXPORT_DEFAULTS = {
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
   enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
   exitDurationMs: MEDIA_PRESENTATION_DEFAULTS.exitDurationMs,
+  // F-76
+  animationEffect: MEDIA_PRESENTATION_DEFAULTS.animationEffect,
+  imageFit: MEDIA_PRESENTATION_DEFAULTS.imageFit,
+  // end F-76
   overlayVisibility: OVERLAY_VISIBILITY_DEFAULTS,
 };
 
@@ -328,6 +332,8 @@ function normalizeExportSettings(rawSettings = {}) {
     ),
     EXPORT_SETTINGS_FIELDS.speedGaugeMaxKph,
   );
+  const rawRangeStartTimestamp = Number(rawSettings.rangeStartTimestamp);
+  const rawRangeEndTimestamp = Number(rawSettings.rangeEndTimestamp);
 
   return {
     resolutionId,
@@ -339,6 +345,12 @@ function normalizeExportSettings(rawSettings = {}) {
     adaptiveStrength,
     cameraMode,
     speedGaugeMaxKph,
+    rangeStartTimestamp: Number.isFinite(rawRangeStartTimestamp)
+      ? rawRangeStartTimestamp
+      : null,
+    rangeEndTimestamp: Number.isFinite(rawRangeEndTimestamp)
+      ? rawRangeEndTimestamp
+      : null,
     cameraSettings: normalizeCameraSettings(rawSettings.cameraSettings),
     // F-69: carry terrain settings through normalized export payloads so export mirrors preview terrain behavior.
     terrainSettings: normalizeTerrainSettings(rawSettings.terrainSettings),
@@ -598,8 +610,18 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
     };
   }
 
-  const startTimestamp = safeTrackpoints[0].timestamp;
-  const endTimestamp = safeTrackpoints[safeTrackpoints.length - 1].timestamp;
+  const fullStartTimestamp = safeTrackpoints[0].timestamp;
+  const fullEndTimestamp = safeTrackpoints[safeTrackpoints.length - 1].timestamp;
+  const startTimestamp = clamp(
+    normalizedSettings.rangeStartTimestamp ?? fullStartTimestamp,
+    fullStartTimestamp,
+    fullEndTimestamp,
+  );
+  const endTimestamp = clamp(
+    normalizedSettings.rangeEndTimestamp ?? fullEndTimestamp,
+    startTimestamp,
+    fullEndTimestamp,
+  );
   const fixedSpeedMetersPerSecond = Math.max(
     1,
     getTrackAverageSpeedMetersPerSecond(safeTrackpoints) *
@@ -607,6 +629,12 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
   );
   const sortedMediaItems = (Array.isArray(mediaItems) ? mediaItems : [])
     .filter((item) => Number.isFinite(item?.alignedActivityTimestamp))
+    .filter((item) => {
+      return (
+        item.alignedActivityTimestamp >= startTimestamp &&
+        item.alignedActivityTimestamp <= endTimestamp
+      );
+    })
     .sort(compareMediaPresentationItems)
     .map((item) => createMediaTimelineEntry(item, normalizedSettings, endTimestamp))
     .filter(Boolean);

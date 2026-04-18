@@ -35,7 +35,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-10 |v1  | Timeline | Show elapsed time, total duration, and current track position in a richer timeline header | Better navigation and editing context | Implemented |
 | F-11 |v3  | Timeline | Add frame-accurate stepping controls for export review | Helps verify key camera and media moments | Not implemented |
 | F-12 |v3  | Timeline | Add playback loop/range preview for selected sections | Useful for editing and export iteration | Not implemented |
-| F-13 | v3 | Camera | Add first-person camera mode | Required by the spec | Not implemented |
+| F-13 | v4 | Camera | Add first-person camera mode | Required by the spec | Not implemented |
 | F-14 | v2 | Camera | Add editable camera altitude / distance / pitch / motion parameters | Required by the GUI spec | Implemented |
 | F-15 |v3  | Camera | Add predefined camera moves at selected points (orbit, rotate around point, cinematic transition) | Required by the application overview | Not implemented |
 | F-16 |v3  | Camera | Add keyframe-based camera authoring on the route timeline | Enables repeatable custom fly-over behavior | Not implemented |
@@ -97,6 +97,9 @@ These capabilities already exist in the current proof of concept and should be t
 | F-72 |v2  | Overlay | Overlay backgroud should be 50% transparent | new requirement | Implemented |
 | F-73 |v2  | Overlay | graphical overlay (such as speed gauge) should have a size proportional to exported video size | new requirement | Not implemented |
 | F-74 |v2  | Overlay | speed overlay as text in addition to graphical gauge (so that the user can chose) | new requirement | Not implemented |
+| F-75 |v2  | Timeline | aibility to truncate timeline and export only part of it (for instance work and export all track except first hour and last x minutes) | new requirement | Implemented |
+| F-76 |v2  | Media | User can choose animation effect for photo/video enter and exit transitions; photos default to letterbox/pillarbox (contain), with an optional "allow crop" toggle for fill-frame mode | new requirement | Implemented |
+
 
 ## Suggested grouping for release planning
 
@@ -110,6 +113,8 @@ These capabilities already exist in the current proof of concept and should be t
 ### v2 candidates
 
 - Camera, terrain, and smarter video composition: `F-14`, `F-21`, `F-23`, `F-24`, `F-25`, `F-26`, `F-28`, `F-29`, `F-30`, `F-64`, `F-65`, `F-66`, `F-69`
+- Timeline workflow improvements: `F-75`
+- Media presentation: `F-76`
 - GUI workflow improvements: `F-37`, `F-38`, `F-39`
 - Performance and robustness improvements for the export/editor loop: `F-46`, `F-47`, `F-52`, `F-53`, `F-54`, `F-60`
 
