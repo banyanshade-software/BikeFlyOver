@@ -1,3 +1,5 @@
+# for vi users
+*.swp
 # Dependencies
 node_modules/
 

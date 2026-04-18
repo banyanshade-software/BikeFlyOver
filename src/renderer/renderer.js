@@ -657,6 +657,18 @@ function getPlaybackProgressRatio(playbackState) {
   );
 }
 
+function getFullPlaybackProgressRatio(playbackState, timestamp) {
+  if (playbackState.fullDurationMs <= 0) {
+    return 1;
+  }
+
+  return clampProgressRatio(
+    ((timestamp ?? playbackState.currentTimestamp) -
+      playbackState.fullStartTimestamp) /
+      playbackState.fullDurationMs,
+  );
+}
+
 function progressRatioToTimestamp(playbackState, progressRatio) {
   if (playbackState.durationMs <= 0) {
     return playbackState.startTimestamp;
@@ -668,8 +680,26 @@ function progressRatioToTimestamp(playbackState, progressRatio) {
   );
 }
 
+function fullProgressRatioToTimestamp(playbackState, progressRatio) {
+  if (playbackState.fullDurationMs <= 0) {
+    return playbackState.fullStartTimestamp;
+  }
+
+  return (
+    playbackState.fullStartTimestamp +
+    playbackState.fullDurationMs * clampProgressRatio(progressRatio)
+  );
+}
+
 function sliderValueToTimestamp(playbackState, sliderValue) {
   return progressRatioToTimestamp(
+    playbackState,
+    Number(sliderValue) / TIMELINE_SLIDER_MAX,
+  );
+}
+
+function fullSliderValueToTimestamp(playbackState, sliderValue) {
+  return fullProgressRatioToTimestamp(
     playbackState,
     Number(sliderValue) / TIMELINE_SLIDER_MAX,
   );
@@ -688,6 +718,36 @@ function timestampToSliderValue(playbackState, timestamp) {
         ),
     ),
   );
+}
+
+function fullTimestampToSliderValue(playbackState, timestamp) {
+  if (playbackState.fullDurationMs <= 0) {
+    return TIMELINE_SLIDER_MAX;
+  }
+
+  return String(
+    Math.round(
+      TIMELINE_SLIDER_MAX *
+        getFullPlaybackProgressRatio(playbackState, timestamp),
+    ),
+  );
+}
+
+function getTrackpointIndexAtOrBefore(trackpoints, timestamp) {
+  let low = 0;
+  let high = trackpoints.length - 1;
+
+  while (low < high) {
+    const middle = Math.floor((low + high + 1) / 2);
+
+    if (trackpoints[middle].timestamp <= timestamp) {
+      low = middle;
+    } else {
+      high = middle - 1;
+    }
+  }
+
+  return low;
 }
 
 function formatFrameProgress(currentFrame, totalFrames) {
@@ -1529,15 +1589,18 @@ function renderSummary(sampleTrack) {
 }
 
 function createPlaybackState(trackpoints, options = {}) {
-  const startTimestamp = trackpoints[0].timestamp;
-  const endTimestamp = trackpoints[trackpoints.length - 1].timestamp;
+  const fullStartTimestamp = trackpoints[0].timestamp;
+  const fullEndTimestamp = trackpoints[trackpoints.length - 1].timestamp;
 
   return {
     trackpoints,
-    startTimestamp,
-    endTimestamp,
-    durationMs: endTimestamp - startTimestamp,
-    currentTimestamp: startTimestamp,
+    fullStartTimestamp,
+    fullEndTimestamp,
+    fullDurationMs: fullEndTimestamp - fullStartTimestamp,
+    startTimestamp: fullStartTimestamp,
+    endTimestamp: fullEndTimestamp,
+    durationMs: fullEndTimestamp - fullStartTimestamp,
+    currentTimestamp: fullStartTimestamp,
     currentIndex: 0,
     currentSample: trackpoints[0],
     isPlaying: false,
@@ -1591,7 +1654,7 @@ function createPlaybackState(trackpoints, options = {}) {
         options.speedGaugeMaxKph ?? EXPORT_OPTIONS.defaults.speedGaugeMaxKph,
       ),
       speedGaugePeakKph: 0,
-      speedGaugePeakTimestamp: startTimestamp,
+      speedGaugePeakTimestamp: fullStartTimestamp,
     },
   };
 }
@@ -1752,7 +1815,7 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
     name: "Sample TCX route",
     polyline: {
       positions: routePositions,
-      width: 2.5,
+      width: 4, //2.5, xxx
       clampToGround: true,
       material: Cesium.Color.fromCssColorString("#ffffff").withAlpha(0.95),
     },
@@ -2656,8 +2719,16 @@ function interpolateTrackpoint(playbackState) {
 function buildPlayedRoutePositions(Cesium, playbackState) {
   const playedPositions = playbackState.playedRoutePositionsScratch;
   playedPositions.length = 0;
+  const rangeStartIndex = getTrackpointIndexAtOrBefore(
+    playbackState.trackpoints,
+    playbackState.startTimestamp,
+  );
 
-  for (let index = 0; index <= playbackState.currentIndex; index += 1) {
+  for (
+    let index = rangeStartIndex;
+    index <= playbackState.currentIndex;
+    index += 1
+  ) {
     playedPositions.push(playbackState.routePositions[index]);
   }
 
@@ -2695,7 +2766,7 @@ function addPlaybackEntities(viewer, playbackState) {
       positions: new Cesium.CallbackProperty(() => {
         return buildPlayedRoutePositions(Cesium, playbackState);
       }, false),
-      width: 10,
+      width: 40, // width of completed route
       clampToGround: true,
       material: new Cesium.PolylineGlowMaterialProperty({
         color: Cesium.Color.fromCssColorString("#2c7dff"),
@@ -2718,6 +2789,13 @@ function updatePlaybackUI(playbackState) {
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
   const progressRatio = getPlaybackProgressRatio(playbackState);
   const timelineSlider = document.getElementById("timelineSlider");
+  const timelineRangeStartSlider = document.getElementById(
+    "timelineRangeStartSlider",
+  );
+  const timelineRangeEndSlider = document.getElementById("timelineRangeEndSlider");
+  const isFullRangeSelected =
+    playbackState.startTimestamp === playbackState.fullStartTimestamp &&
+    playbackState.endTimestamp === playbackState.fullEndTimestamp;
 
   setTextContent("playbackStatus", playbackState.isPlaying ? "Playing" : "Paused");
   setTextContent("playbackProgress", formatProgress(progressRatio));
@@ -2734,6 +2812,18 @@ function updatePlaybackUI(playbackState) {
   setTextContent("playbackSpeed", `${playbackState.speedMultiplier}x track time`);
   setTextContent("timelineElapsed", formatDuration(elapsedMs));
   setTextContent("timelineDuration", formatDuration(playbackState.durationMs));
+  setTextContent(
+    "timelineRangeStartValue",
+    formatDuration(playbackState.startTimestamp - playbackState.fullStartTimestamp),
+  );
+  setTextContent(
+    "timelineRangeEndValue",
+    formatDuration(playbackState.endTimestamp - playbackState.fullStartTimestamp),
+  );
+  setTextContent(
+    "timelineRangeStatus",
+    isFullRangeSelected ? "Full activity" : "Selected range",
+  );
   setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
 
   if (
@@ -2743,6 +2833,20 @@ function updatePlaybackUI(playbackState) {
     timelineSlider.value = timestampToSliderValue(
       playbackState,
       playbackState.currentTimestamp,
+    );
+  }
+
+  if (timelineRangeStartSlider instanceof HTMLInputElement) {
+    timelineRangeStartSlider.value = fullTimestampToSliderValue(
+      playbackState,
+      playbackState.startTimestamp,
+    );
+  }
+
+  if (timelineRangeEndSlider instanceof HTMLInputElement) {
+    timelineRangeEndSlider.value = fullTimestampToSliderValue(
+      playbackState,
+      playbackState.endTimestamp,
     );
   }
 }
@@ -2855,6 +2959,34 @@ function setPlaybackTimestamp(viewer, playbackState, timestamp, options = {}) {
   syncPlaybackState(viewer, playbackState, options);
 }
 
+function setPlaybackRange(
+  viewer,
+  playbackState,
+  nextStartTimestamp,
+  nextEndTimestamp,
+  options = {},
+) {
+  const clampedStartTimestamp = Math.min(
+    playbackState.fullEndTimestamp,
+    Math.max(playbackState.fullStartTimestamp, nextStartTimestamp),
+  );
+  const clampedEndTimestamp = Math.min(
+    playbackState.fullEndTimestamp,
+    Math.max(clampedStartTimestamp, nextEndTimestamp),
+  );
+
+  playbackState.startTimestamp = clampedStartTimestamp;
+  playbackState.endTimestamp = clampedEndTimestamp;
+  playbackState.durationMs = clampedEndTimestamp - clampedStartTimestamp;
+  playbackState.currentTimestamp = Math.min(
+    playbackState.endTimestamp,
+    Math.max(playbackState.startTimestamp, playbackState.currentTimestamp),
+  );
+  playbackState.lastFrameTime = null;
+  resetFollowCameraSmoothing(playbackState);
+  syncPlaybackState(viewer, playbackState, options);
+}
+
 function stopPlayback(playbackState) {
   if (playbackState.animationFrameId !== null) {
     window.cancelAnimationFrame(playbackState.animationFrameId);
@@ -2919,6 +3051,10 @@ function tickPlayback(viewer, playbackState, frameTime) {
 function startPlayback(viewer, playbackState) {
   if (playbackState.isPlaying && playbackState.animationFrameId !== null) {
     return;
+  }
+
+  if (playbackState.currentTimestamp >= playbackState.endTimestamp) {
+    setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp);
   }
 
   playbackState.isPlaying = true;
@@ -2994,6 +3130,13 @@ function setupPlaybackControls(viewer, playbackState) {
   const restartButton = document.getElementById("restartButton");
   const cameraModeButton = document.getElementById("cameraModeButton");
   const timelineSlider = document.getElementById("timelineSlider");
+  const timelineRangeStartSlider = document.getElementById(
+    "timelineRangeStartSlider",
+  );
+  const timelineRangeEndSlider = document.getElementById("timelineRangeEndSlider");
+  const resetTimelineRangeButton = document.getElementById(
+    "resetTimelineRangeButton",
+  );
 
   playPauseButton?.addEventListener("click", () => {
     if (playbackState.isPlaying) {
@@ -3047,6 +3190,123 @@ function setupPlaybackControls(viewer, playbackState) {
       endTimelineInteraction(viewer, playbackState);
     });
   }
+
+  if (timelineRangeStartSlider instanceof HTMLInputElement) {
+    timelineRangeStartSlider.addEventListener("pointerdown", () => {
+      beginTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeStartSlider.addEventListener("pointerup", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeStartSlider.addEventListener("keydown", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        beginTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeStartSlider.addEventListener("keyup", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        endTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeStartSlider.addEventListener("input", (event) => {
+      beginTimelineInteraction(viewer, playbackState);
+      const nextStartTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        nextStartTimestamp,
+        Math.max(nextStartTimestamp, playbackState.endTimestamp),
+      );
+    });
+
+    timelineRangeStartSlider.addEventListener("change", (event) => {
+      const nextStartTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        nextStartTimestamp,
+        Math.max(nextStartTimestamp, playbackState.endTimestamp),
+      );
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeStartSlider.addEventListener("blur", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+  }
+
+  if (timelineRangeEndSlider instanceof HTMLInputElement) {
+    timelineRangeEndSlider.addEventListener("pointerdown", () => {
+      beginTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeEndSlider.addEventListener("pointerup", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeEndSlider.addEventListener("keydown", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        beginTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeEndSlider.addEventListener("keyup", (event) => {
+      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
+        endTimelineInteraction(viewer, playbackState);
+      }
+    });
+
+    timelineRangeEndSlider.addEventListener("input", (event) => {
+      beginTimelineInteraction(viewer, playbackState);
+      const nextEndTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        Math.min(playbackState.startTimestamp, nextEndTimestamp),
+        nextEndTimestamp,
+      );
+    });
+
+    timelineRangeEndSlider.addEventListener("change", (event) => {
+      const nextEndTimestamp = fullSliderValueToTimestamp(
+        playbackState,
+        event.target.value,
+      );
+      setPlaybackRange(
+        viewer,
+        playbackState,
+        Math.min(playbackState.startTimestamp, nextEndTimestamp),
+        nextEndTimestamp,
+      );
+      endTimelineInteraction(viewer, playbackState);
+    });
+
+    timelineRangeEndSlider.addEventListener("blur", () => {
+      endTimelineInteraction(viewer, playbackState);
+    });
+  }
+
+  resetTimelineRangeButton?.addEventListener("click", () => {
+    setPlaybackRange(
+      viewer,
+      playbackState,
+      playbackState.fullStartTimestamp,
+      playbackState.fullEndTimestamp,
+    );
+  });
 }
 
 function applyParameterInputAttributes() {
@@ -3810,6 +4070,8 @@ function readExportSettings() {
       cameraModeSelect instanceof HTMLSelectElement
         ? cameraModeSelect.value
         : EXPORT_OPTIONS.defaults.cameraMode,
+    rangeStartTimestamp: window.playbackState?.startTimestamp,
+    rangeEndTimestamp: window.playbackState?.endTimestamp,
     mediaItems: mediaLibraryState.items,
     overlayVisibility: normalizeOverlayVisibilityState(
       window.playbackState?.ui?.overlayVisibility,

@@ -109,6 +109,52 @@
               <span id="timelineElapsed">00:00</span>
               <span id="timelineDuration">00:00</span>
             </div>
+            <div class="field-stack">
+              <label class="field-group timeline-group" for="timelineRangeStartSlider">
+                <span class="field-label">Range start</span>
+                <input
+                  id="timelineRangeStartSlider"
+                  class="timeline-slider"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  value="0"
+                />
+              </label>
+              <label class="field-group timeline-group" for="timelineRangeEndSlider">
+                <span class="field-label">Range end</span>
+                <input
+                  id="timelineRangeEndSlider"
+                  class="timeline-slider"
+                  type="range"
+                  min="0"
+                  max="1000"
+                  step="1"
+                  value="1000"
+                />
+              </label>
+            </div>
+            <dl class="summary-list summary-list--compact">
+              <div>
+                <dt>Selected start</dt>
+                <dd id="timelineRangeStartValue">00:00</dd>
+              </div>
+              <div>
+                <dt>Selected end</dt>
+                <dd id="timelineRangeEndValue">00:00</dd>
+              </div>
+              <div>
+                <dt>Mode</dt>
+                <dd id="timelineRangeStatus">Full activity</dd>
+              </div>
+            </dl>
+            <div class="button-row">
+              <button id="resetTimelineRangeButton" type="button">Reset full range</button>
+            </div>
+            <p class="helper-text">
+              Preview playback, scrubbing, and export all use the selected range.
+            </p>
           </section>
           <section class="controls-panel" aria-label="Camera controls">
             <h2>Camera</h2>
