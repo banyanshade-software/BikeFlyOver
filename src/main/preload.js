@@ -25,6 +25,11 @@ const {
   MEDIA_PRESENTATION_SETTINGS_FIELDS,
   OVERLAY_VISIBILITY_FIELDS,
 } = require("../shared/parameter-config");
+// F-76: expose animation effects registry so the renderer can drive effect-specific transforms.
+const {
+  MEDIA_ANIMATION_EFFECTS,
+} = require("../shared/media-presentation");
+// end F-76
 
 function subscribe(channel, listener) {
   const wrappedListener = (_event, payload) => {
@@ -74,6 +79,11 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
       resolutionPresets: EXPORT_RESOLUTION_PRESETS,
       cameraModes: EXPORT_CAMERA_MODES,
       timingModes: EXPORT_TIMING_MODES,
+      // F-76: expose animation effect IDs and labels (plain data only — functions cannot cross the context bridge).
+      mediaAnimationEffects: Object.entries(MEDIA_ANIMATION_EFFECTS).map(
+        ([id, { label }]) => ({ id, label }),
+      ),
+      // end F-76
     };
   },
   importMedia() {

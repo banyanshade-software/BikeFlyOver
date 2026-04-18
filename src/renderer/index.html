@@ -314,6 +314,21 @@
                 <input id="photoKenBurnsCheckbox" type="checkbox" />
                 <span>Enable subtle Ken Burns effect on exported photos</span>
               </label>
+              <label class="field-group" for="mediaAnimationEffectSelect">
+                <span class="field-label">Transition effect</span>
+                <select id="mediaAnimationEffectSelect">
+                  <option value="slide-up">Slide up (default)</option>
+                  <option value="fade">Fade only</option>
+                  <option value="slide-down">Slide down</option>
+                  <option value="slide-left">Slide from right</option>
+                  <option value="zoom">Zoom</option>
+                  <option value="none">None (fade only)</option>
+                </select>
+              </label>
+              <label class="checkbox-group" for="photoAllowCropCheckbox">
+                <input id="photoAllowCropCheckbox" type="checkbox" />
+                <span>Allow crop (fill frame; default is letterbox/pillarbox)</span>
+              </label>
             </div>
             <p class="helper-text">
               Known cameras can share one offset; each media item can also override its own timing. Unidentified files support per-media correction only.

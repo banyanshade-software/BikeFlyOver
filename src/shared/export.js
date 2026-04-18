@@ -100,6 +100,10 @@ const EXPORT_DEFAULTS = {
   photoKenBurnsEnabled: MEDIA_PRESENTATION_DEFAULTS.photoKenBurnsEnabled,
   enterDurationMs: MEDIA_PRESENTATION_DEFAULTS.enterDurationMs,
   exitDurationMs: MEDIA_PRESENTATION_DEFAULTS.exitDurationMs,
+  // F-76
+  animationEffect: MEDIA_PRESENTATION_DEFAULTS.animationEffect,
+  imageFit: MEDIA_PRESENTATION_DEFAULTS.imageFit,
+  // end F-76
   overlayVisibility: OVERLAY_VISIBILITY_DEFAULTS,
 };
 

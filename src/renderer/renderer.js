@@ -1005,6 +1005,10 @@ function readMediaPresentationSettings() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  // F-76
+  const mediaAnimationEffectSelect = document.getElementById("mediaAnimationEffectSelect");
+  const photoAllowCropCheckbox = document.getElementById("photoAllowCropCheckbox");
+  // end F-76
   const photoDisplayDefinition =
     MEDIA_PRESENTATION_SETTINGS_FIELDS.photoDisplayDurationMs;
   const parsedPhotoDisplaySeconds =
@@ -1027,6 +1031,16 @@ function readMediaPresentationSettings() {
         : EXPORT_OPTIONS.defaults.photoKenBurnsEnabled,
     photoKenBurnsScale:
       MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale?.default ?? 0,
+    // F-76
+    animationEffect:
+      mediaAnimationEffectSelect instanceof HTMLSelectElement
+        ? mediaAnimationEffectSelect.value
+        : EXPORT_OPTIONS.defaults.animationEffect,
+    imageFit:
+      photoAllowCropCheckbox instanceof HTMLInputElement && photoAllowCropCheckbox.checked
+        ? "cover"
+        : "contain",
+    // end F-76
   };
 }
 
@@ -1083,14 +1097,63 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
   );
   let opacity = 1;
   let translateY = 0;
+  let translateX = 0;
   let scale = 1;
+
+  // F-76: compute effect-specific transforms based on the chosen animation effect.
+  const effect = settings?.animationEffect ?? "slide-up";
+
+  function applyEnterTransforms(p) {
+    switch (effect) {
+      case "slide-up":
+        translateY = 18 * (1 - p);
+        scale = 0.94 + 0.06 * p;
+        break;
+      case "slide-down":
+        translateY = -18 * (1 - p);
+        scale = 0.94 + 0.06 * p;
+        break;
+      case "slide-left":
+        translateX = 24 * (1 - p);
+        break;
+      case "zoom":
+        scale = 0.85 + 0.15 * p;
+        break;
+      case "fade":
+      case "none":
+      default:
+        break;
+    }
+  }
+
+  function applyExitTransforms(p) {
+    switch (effect) {
+      case "slide-up":
+        translateY = -10 * p;
+        scale = 1 + 0.03 * p;
+        break;
+      case "slide-down":
+        translateY = 10 * p;
+        scale = 1 + 0.03 * p;
+        break;
+      case "slide-left":
+        translateX = -18 * p;
+        break;
+      case "zoom":
+        scale = 1 + 0.1 * p;
+        break;
+      case "fade":
+      case "none":
+      default:
+        break;
+    }
+  }
 
   if (timeline.enterDurationMs > 0 && safeElapsedMs < timeline.enterDurationMs) {
     const enterProgress = safeElapsedMs / timeline.enterDurationMs;
 
     opacity = enterProgress;
-    translateY = 18 * (1 - enterProgress);
-    scale = 0.94 + 0.06 * enterProgress;
+    applyEnterTransforms(enterProgress);
   } else if (timeline.exitDurationMs > 0 && safeElapsedMs > exitStartMs) {
     const exitProgress = Math.min(
       1,
@@ -1098,15 +1161,17 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
     );
 
     opacity = 1 - exitProgress;
-    translateY = -10 * exitProgress;
-    scale = 1 + 0.03 * exitProgress;
+    applyExitTransforms(exitProgress);
   }
+  // end F-76
 
   const progressRatio =
     timeline.totalDurationMs > 0 ? safeElapsedMs / timeline.totalDurationMs : 1;
 
   return {
     elapsedMs: safeElapsedMs,
+    // F-76: include translateX and imageFit so the overlay renderer doesn't need to re-read settings.
+    imageFit: settings?.imageFit ?? "contain",
     imageScale:
       item.mediaType === "image" && settings.photoKenBurnsEnabled
         ? 1 + settings.photoKenBurnsScale * progressRatio
@@ -1114,7 +1179,9 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
     opacity,
     scale,
     totalDurationMs: timeline.totalDurationMs,
+    translateX,
     translateY,
+    // end F-76
     videoCurrentTimeMs:
       item.mediaType === "video"
         ? Math.min(safeElapsedMs, getMediaDurationMs(item))
@@ -1485,12 +1552,17 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
     return;
   }
 
-  const { item: activeItem, imageScale, opacity, scale, translateY } = presentation;
+  const { item: activeItem, imageFit, imageScale, opacity, scale, translateX, translateY } = presentation;
 
   cardElement.style.opacity = String(opacity);
-  cardElement.style.transform = `translateY(${translateY}px) scale(${scale})`;
+  cardElement.style.transform = `translateY(${translateY}px) translateX(${translateX ?? 0}px) scale(${scale})`;
   imageElement.style.transform = `scale(${imageScale})`;
   videoElement.style.transform = `scale(${imageScale})`;
+  // F-76: apply image fit (contain = letterbox, cover = crop to fill).
+  imageElement.style.backgroundSize = imageFit === "cover" ? "cover" : "contain";
+  imageElement.style.backgroundColor = "#000";
+  videoElement.style.objectFit = imageFit === "cover" ? "cover" : "contain";
+  // end F-76
 
   updateMediaPreviewMetadata(activeItem, presentation);
 
@@ -3761,6 +3833,10 @@ function populateExportControls() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  // F-76
+  const mediaAnimationEffectSelect = document.getElementById("mediaAnimationEffectSelect");
+  const photoAllowCropCheckbox = document.getElementById("photoAllowCropCheckbox");
+  // end F-76
 
   populateSelect(
     resolutionSelect,
@@ -3808,6 +3884,18 @@ function populateExportControls() {
   if (photoKenBurnsCheckbox instanceof HTMLInputElement) {
     photoKenBurnsCheckbox.checked = EXPORT_OPTIONS.defaults.photoKenBurnsEnabled;
   }
+
+  // F-76: initialise animation effect select and crop checkbox.
+  if (mediaAnimationEffectSelect instanceof HTMLSelectElement) {
+    mediaAnimationEffectSelect.value =
+      EXPORT_OPTIONS.defaults.animationEffect ?? "slide-up";
+  }
+
+  if (photoAllowCropCheckbox instanceof HTMLInputElement) {
+    photoAllowCropCheckbox.checked =
+      (EXPORT_OPTIONS.defaults.imageFit ?? "contain") === "cover";
+  }
+  // end F-76
 
   updateExportTimingControls();
 }
@@ -4225,6 +4313,10 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("terrainExaggerationInput", exportUiState.isExporting);
   setElementDisabled("photoDisplayDurationInput", exportUiState.isExporting);
   setElementDisabled("photoKenBurnsCheckbox", exportUiState.isExporting);
+  // F-76
+  setElementDisabled("mediaAnimationEffectSelect", exportUiState.isExporting);
+  setElementDisabled("photoAllowCropCheckbox", exportUiState.isExporting);
+  // end F-76
   setElementDisabled("overlayTimeMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayDistanceMetricCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayAltitudeMetricCheckbox", exportUiState.isExporting);
@@ -4291,6 +4383,10 @@ function readExportSettings() {
     // end F-69
     photoDisplayDurationMs: mediaPresentationSettings.photoDisplayDurationMs,
     photoKenBurnsEnabled: mediaPresentationSettings.photoKenBurnsEnabled,
+    // F-76
+    animationEffect: mediaPresentationSettings.animationEffect,
+    imageFit: mediaPresentationSettings.imageFit,
+    // end F-76
   };
 }
 
@@ -4302,6 +4398,10 @@ function setupExportControls() {
     "photoDisplayDurationInput",
   );
   const photoKenBurnsCheckbox = document.getElementById("photoKenBurnsCheckbox");
+  // F-76
+  const mediaAnimationEffectSelect = document.getElementById("mediaAnimationEffectSelect");
+  const photoAllowCropCheckbox = document.getElementById("photoAllowCropCheckbox");
+  // end F-76
 
   timingModeSelect?.addEventListener("change", () => {
     updateExportTimingControls();
@@ -4317,6 +4417,18 @@ function setupExportControls() {
       void updateMediaPreviewOverlay(window.playbackState);
     }
   });
+  // F-76: refresh overlay preview when animation effect or crop mode changes.
+  mediaAnimationEffectSelect?.addEventListener("change", () => {
+    if (window.playbackState) {
+      void updateMediaPreviewOverlay(window.playbackState);
+    }
+  });
+  photoAllowCropCheckbox?.addEventListener("change", () => {
+    if (window.playbackState) {
+      void updateMediaPreviewOverlay(window.playbackState);
+    }
+  });
+  // end F-76
 
   window.bikeFlyOverApp?.onExportStatus((statusUpdate) => {
     updateExportUi(statusUpdate);

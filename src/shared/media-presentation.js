@@ -3,6 +3,48 @@ const {
   MEDIA_PRESENTATION_SETTINGS_FIELDS,
 } = require("./parameter-config");
 
+// F-76: animation effects registry.
+// Each entry describes the positional transforms applied during enter/exit phases.
+// Opacity is always faded regardless of effect.
+const MEDIA_ANIMATION_EFFECTS = Object.freeze({
+  "slide-up": {
+    label: "Slide up",
+    enter: (p) => ({ translateY: 18 * (1 - p), translateX: 0, scale: lerp(0.94, 1, p) }),
+    exit: (p) => ({ translateY: -10 * p, translateX: 0, scale: lerp(1, 1.03, p) }),
+  },
+  "fade": {
+    label: "Fade only",
+    enter: () => ({ translateY: 0, translateX: 0, scale: 1 }),
+    exit: () => ({ translateY: 0, translateX: 0, scale: 1 }),
+  },
+  "slide-down": {
+    label: "Slide down",
+    enter: (p) => ({ translateY: -18 * (1 - p), translateX: 0, scale: lerp(0.94, 1, p) }),
+    exit: (p) => ({ translateY: 10 * p, translateX: 0, scale: lerp(1, 1.03, p) }),
+  },
+  "slide-left": {
+    label: "Slide from right",
+    enter: (p) => ({ translateY: 0, translateX: 24 * (1 - p), scale: 1 }),
+    exit: (p) => ({ translateY: 0, translateX: -18 * p, scale: 1 }),
+  },
+  "zoom": {
+    label: "Zoom",
+    enter: (p) => ({ translateY: 0, translateX: 0, scale: lerp(0.85, 1, p) }),
+    exit: (p) => ({ translateY: 0, translateX: 0, scale: lerp(1, 1.1, p) }),
+  },
+  "none": {
+    label: "None (fade only)",
+    enter: () => ({ translateY: 0, translateX: 0, scale: 1 }),
+    exit: () => ({ translateY: 0, translateX: 0, scale: 1 }),
+  },
+});
+
+const MEDIA_IMAGE_FIT_OPTIONS = Object.freeze({
+  contain: "contain",
+  cover: "cover",
+});
+// end F-76
+
 function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -30,6 +72,18 @@ function clampToFieldDefinition(value, definition) {
 }
 
 function normalizeMediaPresentationSettings(rawSettings = {}) {
+  // F-76: validate animationEffect and imageFit.
+  const rawEffect = rawSettings.animationEffect ?? MEDIA_PRESENTATION_DEFAULTS.animationEffect;
+  const animationEffect = Object.prototype.hasOwnProperty.call(MEDIA_ANIMATION_EFFECTS, rawEffect)
+    ? rawEffect
+    : MEDIA_PRESENTATION_DEFAULTS.animationEffect;
+
+  const rawFit = rawSettings.imageFit ?? MEDIA_PRESENTATION_DEFAULTS.imageFit;
+  const imageFit = Object.prototype.hasOwnProperty.call(MEDIA_IMAGE_FIT_OPTIONS, rawFit)
+    ? rawFit
+    : MEDIA_PRESENTATION_DEFAULTS.imageFit;
+  // end F-76
+
   return {
     photoDisplayDurationMs: clampToFieldDefinition(
       normalizePositiveInteger(
@@ -62,6 +116,10 @@ function normalizeMediaPresentationSettings(rawSettings = {}) {
       MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale.min ?? 0,
       MEDIA_PRESENTATION_SETTINGS_FIELDS.photoKenBurnsScale.max ?? Number.POSITIVE_INFINITY,
     ),
+    // F-76
+    animationEffect,
+    imageFit,
+    // end F-76
   };
 }
 
@@ -142,25 +200,35 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
   );
   let opacity = 1;
   let translateY = 0;
+  let translateX = 0;
   let scale = 1;
+
+  // F-76: apply the chosen animation effect.
+  const effectId = settings?.animationEffect ?? MEDIA_PRESENTATION_DEFAULTS.animationEffect;
+  const effect = MEDIA_ANIMATION_EFFECTS[effectId] ?? MEDIA_ANIMATION_EFFECTS["slide-up"];
 
   if (timeline.enterDurationMs > 0 && safeElapsedMs < enterEndMs) {
     const enterProgress = safeElapsedMs / timeline.enterDurationMs;
+    const transforms = effect.enter(enterProgress);
 
     opacity = enterProgress;
-    translateY = 18 * (1 - enterProgress);
-    scale = lerp(0.94, 1, enterProgress);
+    translateY = transforms.translateY;
+    translateX = transforms.translateX;
+    scale = transforms.scale;
   } else if (timeline.exitDurationMs > 0 && safeElapsedMs > exitStartMs) {
     const exitProgress = clamp(
       (safeElapsedMs - exitStartMs) / timeline.exitDurationMs,
       0,
       1,
     );
+    const transforms = effect.exit(exitProgress);
 
     opacity = 1 - exitProgress;
-    translateY = -10 * exitProgress;
-    scale = lerp(1, 1.03, exitProgress);
+    translateY = transforms.translateY;
+    translateX = transforms.translateX;
+    scale = transforms.scale;
   }
+  // end F-76
 
   const progressRatio =
     timeline.totalDurationMs > 0 ? safeElapsedMs / timeline.totalDurationMs : 1;
@@ -171,12 +239,16 @@ function buildMediaPresentationState(item, elapsedMs, settings) {
 
   return {
     elapsedMs: safeElapsedMs,
+    // F-76: include imageFit and translateX in result so the renderer doesn't need settings.
+    imageFit: settings?.imageFit ?? MEDIA_PRESENTATION_DEFAULTS.imageFit,
     imageScale,
     opacity,
     progressRatio,
     scale,
     totalDurationMs: timeline.totalDurationMs,
+    translateX,
     translateY,
+    // end F-76
     videoCurrentTimeMs:
       item.mediaType === "video"
         ? clamp(safeElapsedMs, 0, getMediaDurationMs(item))
@@ -247,6 +319,10 @@ function getActiveMediaPresentation({
 }
 
 module.exports = {
+  // F-76
+  MEDIA_ANIMATION_EFFECTS,
+  MEDIA_IMAGE_FIT_OPTIONS,
+  // end F-76
   MEDIA_PRESENTATION_DEFAULTS,
   buildMediaPresentationState,
   compareMediaPresentationItems,
