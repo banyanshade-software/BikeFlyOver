@@ -4692,9 +4692,11 @@ async function renderExportFrame(viewer, playbackState, payload) {
   stopPlayback(playbackState);
   playbackState.isPlaying = false;
   applyRendererSettings(viewer, playbackState, payload.settings);
-  await refreshTerrainRouteGeometry(viewer, playbackState, {
-    updateTimelineState: false,
-  });
+  // Route geometry was already initialised in onExportPrepare; rebuilding it every frame
+  // reassigns Cesium polyline positions each render pass, which causes the not-yet-played
+  // route to flash/flicker (Cesium marks the primitive dirty and may render a blank frame
+  // while rebuilding GPU geometry). Terrain heights and route positions are constant for
+  // the entire export session, so there is nothing to rebuild here.
   await applyRendererFrame(
     viewer,
     playbackState,
