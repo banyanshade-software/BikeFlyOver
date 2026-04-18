@@ -750,6 +750,25 @@ function getTrackpointIndexAtOrBefore(trackpoints, timestamp) {
   return low;
 }
 
+function appendUniqueRoutePosition(Cesium, positions, position) {
+  if (!position) {
+    return;
+  }
+
+  const lastPosition = positions[positions.length - 1];
+
+  if (
+    !lastPosition ||
+    !Cesium.Cartesian3.equalsEpsilon(
+      lastPosition,
+      position,
+      Cesium.Math.EPSILON7,
+    )
+  ) {
+    positions.push(position);
+  }
+}
+
 function formatFrameProgress(currentFrame, totalFrames) {
   if (!Number.isFinite(totalFrames) || totalFrames < 1) {
     return "-";
@@ -1625,6 +1644,8 @@ function createPlaybackState(trackpoints, options = {}) {
       ),
     },
     route: {
+      afterRangeEntity: null,
+      beforeRangeEntity: null,
       endEntity: null,
       startEntity: null,
     },
@@ -1771,9 +1792,7 @@ function applyRoutePositionsToEntities(playbackState) {
   playbackState.routePositions = routePositions;
   playbackState.camera.routeBoundingSphere = routeBoundingSphere;
 
-  if (playbackState.camera.routeEntity?.polyline) {
-    playbackState.camera.routeEntity.polyline.positions = routePositions;
-  }
+  syncRouteRangeEntities(playbackState);
 
   if (playbackState.route.startEntity) {
     playbackState.route.startEntity.position = startPosition;
@@ -1809,16 +1828,53 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
   const routeBoundingSphere = Cesium.BoundingSphere.fromPoints(routePositions);
   const startPosition = routePositions[0];
   const endPosition = routePositions[routePositions.length - 1];
+  playbackState.routePositions = routePositions;
+
+  const {
+    activePositions,
+    afterPositions,
+    beforePositions,
+  } = getRangeRoutePositions(playbackState);
 
   const routeEntity = viewer.entities.add({
     id: "sample-route",
-    name: "Sample TCX route",
+    name: "Selected route range",
     polyline: {
-      positions: routePositions,
+      positions: activePositions,
       width: 4, //2.5, xxx
       clampToGround: true,
       material: Cesium.Color.fromCssColorString("#ffffff").withAlpha(0.95),
     },
+  });
+
+  const beforeRangeEntity = viewer.entities.add({
+    id: "sample-route-before-range",
+    name: "Route before selected range",
+    polyline: {
+      positions: beforePositions,
+      width: 3,
+      clampToGround: true,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.fromCssColorString("#86a9c7").withAlpha(0.9),
+        dashLength: 18,
+      }),
+    },
+    show: beforePositions.length >= 2,
+  });
+
+  const afterRangeEntity = viewer.entities.add({
+    id: "sample-route-after-range",
+    name: "Route after selected range",
+    polyline: {
+      positions: afterPositions,
+      width: 3,
+      clampToGround: true,
+      material: new Cesium.PolylineDashMaterialProperty({
+        color: Cesium.Color.fromCssColorString("#86a9c7").withAlpha(0.9),
+        dashLength: 18,
+      }),
+    },
+    show: afterPositions.length >= 2,
   });
 
   const startEntity = viewer.entities.add({
@@ -1847,6 +1903,8 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
     },
   });
 
+  playbackState.route.beforeRangeEntity = beforeRangeEntity;
+  playbackState.route.afterRangeEntity = afterRangeEntity;
   playbackState.route.startEntity = startEntity;
   playbackState.route.endEntity = endEntity;
 
@@ -2716,6 +2774,138 @@ function interpolateTrackpoint(playbackState) {
   // end F-69
 }
 
+function getRouteDisplayPositionAtTimestamp(Cesium, playbackState, timestamp) {
+  const clampedTimestamp = Math.min(
+    playbackState.fullEndTimestamp,
+    Math.max(playbackState.fullStartTimestamp, timestamp),
+  );
+  const { trackpoints } = playbackState;
+  const currentIndex = getTrackpointIndexAtOrBefore(trackpoints, clampedTimestamp);
+  const startTrackpoint = trackpoints[currentIndex];
+  const endTrackpoint = trackpoints[Math.min(currentIndex + 1, trackpoints.length - 1)];
+
+  if (
+    currentIndex >= trackpoints.length - 1 ||
+    startTrackpoint.timestamp === endTrackpoint.timestamp
+  ) {
+    return (
+      playbackState.routePositions[currentIndex] ||
+      toRouteDisplayPosition(
+        Cesium,
+        startTrackpoint,
+        getTerrainDisplayHeight(playbackState, currentIndex),
+      )
+    );
+  }
+
+  const segmentRatio = Math.min(
+    1,
+    Math.max(
+      0,
+      (clampedTimestamp - startTrackpoint.timestamp) /
+        (endTrackpoint.timestamp - startTrackpoint.timestamp),
+    ),
+  );
+  const interpolatedSample = {
+    latitude:
+      startTrackpoint.latitude +
+      (endTrackpoint.latitude - startTrackpoint.latitude) * segmentRatio,
+    longitude:
+      startTrackpoint.longitude +
+      (endTrackpoint.longitude - startTrackpoint.longitude) * segmentRatio,
+  };
+  const startDisplayHeight = getTerrainDisplayHeight(playbackState, currentIndex);
+  const endDisplayHeight = getTerrainDisplayHeight(
+    playbackState,
+    Math.min(currentIndex + 1, trackpoints.length - 1),
+  );
+
+  return toRouteDisplayPosition(
+    Cesium,
+    interpolatedSample,
+    startDisplayHeight + (endDisplayHeight - startDisplayHeight) * segmentRatio,
+  );
+}
+
+function getRangeRoutePositions(playbackState) {
+  const Cesium = window.Cesium;
+  const beforePositions = [];
+  const activePositions = [];
+  const afterPositions = [];
+  const { routePositions, trackpoints } = playbackState;
+  const rangeStartIndex = getTrackpointIndexAtOrBefore(
+    trackpoints,
+    playbackState.startTimestamp,
+  );
+  const rangeEndIndex = getTrackpointIndexAtOrBefore(
+    trackpoints,
+    playbackState.endTimestamp,
+  );
+  const rangeStartPosition = getRouteDisplayPositionAtTimestamp(
+    Cesium,
+    playbackState,
+    playbackState.startTimestamp,
+  );
+  const rangeEndPosition = getRouteDisplayPositionAtTimestamp(
+    Cesium,
+    playbackState,
+    playbackState.endTimestamp,
+  );
+
+  if (playbackState.startTimestamp > playbackState.fullStartTimestamp) {
+    for (let index = 0; index <= rangeStartIndex; index += 1) {
+      appendUniqueRoutePosition(Cesium, beforePositions, routePositions[index]);
+    }
+    appendUniqueRoutePosition(Cesium, beforePositions, rangeStartPosition);
+  }
+
+  appendUniqueRoutePosition(Cesium, activePositions, rangeStartPosition);
+  for (let index = rangeStartIndex + 1; index <= rangeEndIndex; index += 1) {
+    appendUniqueRoutePosition(Cesium, activePositions, routePositions[index]);
+  }
+  appendUniqueRoutePosition(Cesium, activePositions, rangeEndPosition);
+
+  if (playbackState.endTimestamp < playbackState.fullEndTimestamp) {
+    appendUniqueRoutePosition(Cesium, afterPositions, rangeEndPosition);
+    for (
+      let index = Math.min(rangeEndIndex + 1, routePositions.length - 1);
+      index < routePositions.length;
+      index += 1
+    ) {
+      appendUniqueRoutePosition(Cesium, afterPositions, routePositions[index]);
+    }
+  }
+
+  return {
+    activePositions,
+    afterPositions,
+    beforePositions,
+    rangeStartPosition,
+  };
+}
+
+function syncRouteRangeEntities(playbackState) {
+  const { activePositions, afterPositions, beforePositions } =
+    getRangeRoutePositions(playbackState);
+
+  if (playbackState.camera.routeEntity?.polyline) {
+    playbackState.camera.routeEntity.polyline.positions = activePositions;
+    playbackState.camera.routeEntity.show = activePositions.length >= 2;
+  }
+
+  if (playbackState.route.beforeRangeEntity?.polyline) {
+    playbackState.route.beforeRangeEntity.polyline.positions = beforePositions;
+    playbackState.route.beforeRangeEntity.show = beforePositions.length >= 2;
+  }
+
+  if (playbackState.route.afterRangeEntity?.polyline) {
+    playbackState.route.afterRangeEntity.polyline.positions = afterPositions;
+    playbackState.route.afterRangeEntity.show = afterPositions.length >= 2;
+  }
+
+  return activePositions;
+}
+
 function buildPlayedRoutePositions(Cesium, playbackState) {
   const playedPositions = playbackState.playedRoutePositionsScratch;
   playedPositions.length = 0;
@@ -2723,13 +2913,24 @@ function buildPlayedRoutePositions(Cesium, playbackState) {
     playbackState.trackpoints,
     playbackState.startTimestamp,
   );
+  const rangeStartPosition = getRouteDisplayPositionAtTimestamp(
+    Cesium,
+    playbackState,
+    playbackState.startTimestamp,
+  );
+
+  appendUniqueRoutePosition(Cesium, playedPositions, rangeStartPosition);
 
   for (
-    let index = rangeStartIndex;
+    let index = rangeStartIndex + 1;
     index <= playbackState.currentIndex;
     index += 1
   ) {
-    playedPositions.push(playbackState.routePositions[index]);
+    appendUniqueRoutePosition(
+      Cesium,
+      playedPositions,
+      playbackState.routePositions[index],
+    );
   }
 
   if (
@@ -2737,7 +2938,11 @@ function buildPlayedRoutePositions(Cesium, playbackState) {
     playbackState.currentSamplePosition !==
       playbackState.routePositions[playbackState.currentIndex]
   ) {
-    playedPositions.push(playbackState.currentSamplePosition);
+    appendUniqueRoutePosition(
+      Cesium,
+      playedPositions,
+      playbackState.currentSamplePosition,
+    );
   }
 
   return playedPositions;
@@ -2984,6 +3189,7 @@ function setPlaybackRange(
   );
   playbackState.lastFrameTime = null;
   resetFollowCameraSmoothing(playbackState);
+  syncRouteRangeEntities(playbackState);
   syncPlaybackState(viewer, playbackState, options);
 }
 
