@@ -360,6 +360,12 @@
                 <span class="field-label">Adaptive strength</span>
                 <input id="exportAdaptiveStrengthInput" type="number" />
               </label>
+              <!-- F-29: target duration input, shown only when timing mode is target-duration -->
+              <label id="exportTargetDurationGroup" class="field-group">
+                <span class="field-label">Target duration (seconds)</span>
+                <input id="exportTargetDurationInput" type="number" min="1" step="1" />
+              </label>
+              <!-- end F-29 -->
               <label class="field-group">
                 <span class="field-label">Camera mode</span>
                 <select id="exportCameraModeSelect"></select>

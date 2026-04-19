@@ -163,6 +163,14 @@ const EXPORT_SETTINGS_FIELDS = freezeDefinitionMap({
     min: 10,
     step: 5,
   },
+  // F-29: target video length in seconds for the target-duration timing mode.
+  targetDurationSeconds: {
+    type: "number",
+    default: 60,
+    min: 1,
+    step: 1,
+  },
+  // end F-29
 });
 
 const MEDIA_PRESENTATION_SETTINGS_FIELDS = freezeDefinitionMap({

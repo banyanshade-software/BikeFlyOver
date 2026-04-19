@@ -73,6 +73,9 @@ const EXPORT_TIMING_MODES = [
   { id: "adaptive-speed", label: "Adaptive speed" },
   { id: "proportional", label: "Proportional track time" },
   { id: "fixed-speed", label: "Fixed route speed" },
+  // F-29: target-duration mode lets users specify the desired video length directly.
+  { id: "target-duration", label: "Target duration" },
+  // end F-29
 ];
 
 const EXPORT_DEFAULTS = {
@@ -92,6 +95,9 @@ const EXPORT_DEFAULTS = {
   settleStablePasses: EXPORT_SETTINGS_DEFAULTS.settleStablePasses,
   maxFrameRetries: EXPORT_SETTINGS_DEFAULTS.maxFrameRetries,
   speedGaugeMaxKph: EXPORT_SETTINGS_DEFAULTS.speedGaugeMaxKph,
+  // F-29: default target duration for the target-duration timing mode.
+  targetDurationSeconds: EXPORT_SETTINGS_DEFAULTS.targetDurationSeconds,
+  // end F-29
   cameraSettings: CAMERA_SETTINGS_DEFAULTS,
   // F-69: include terrain defaults in export settings so preview/export share exaggeration and route offset behavior.
   terrainSettings: TERRAIN_SETTINGS_DEFAULTS,
@@ -332,6 +338,15 @@ function normalizeExportSettings(rawSettings = {}) {
     ),
     EXPORT_SETTINGS_FIELDS.speedGaugeMaxKph,
   );
+  // F-29: normalize target duration so invalid values fall back to the default.
+  const targetDurationSeconds = clampToFieldDefinition(
+    normalizePositiveNumber(
+      rawSettings.targetDurationSeconds ?? EXPORT_DEFAULTS.targetDurationSeconds,
+      "targetDurationSeconds",
+    ),
+    EXPORT_SETTINGS_FIELDS.targetDurationSeconds,
+  );
+  // end F-29
   const rawRangeStartTimestamp = Number(rawSettings.rangeStartTimestamp);
   const rawRangeEndTimestamp = Number(rawSettings.rangeEndTimestamp);
 
@@ -345,6 +360,9 @@ function normalizeExportSettings(rawSettings = {}) {
     adaptiveStrength,
     cameraMode,
     speedGaugeMaxKph,
+    // F-29: include targetDurationSeconds so it flows through to buildExportTimeline.
+    targetDurationSeconds,
+    // end F-29
     rangeStartTimestamp: Number.isFinite(rawRangeStartTimestamp)
       ? rawRangeStartTimestamp
       : null,
@@ -622,10 +640,25 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
     startTimestamp,
     fullEndTimestamp,
   );
+  // F-29: when target-duration mode is selected, compute an effective speed multiplier from the
+  // desired video length so that the proportional segment logic produces the correct total duration.
+  const effectiveSettings =
+    normalizedSettings.timingMode === "target-duration"
+      ? {
+          ...normalizedSettings,
+          timingMode: "proportional",
+          speedMultiplier: Math.max(
+            0.001,
+            (endTimestamp - startTimestamp) /
+              (normalizedSettings.targetDurationSeconds * 1000),
+          ),
+        }
+      : normalizedSettings;
+  // end F-29
   const fixedSpeedMetersPerSecond = Math.max(
     1,
     getTrackAverageSpeedMetersPerSecond(safeTrackpoints) *
-      normalizedSettings.speedMultiplier,
+      effectiveSettings.speedMultiplier,
   );
   const sortedMediaItems = (Array.isArray(mediaItems) ? mediaItems : [])
     .filter((item) => Number.isFinite(item?.alignedActivityTimestamp))
@@ -636,7 +669,7 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
       );
     })
     .sort(compareMediaPresentationItems)
-    .map((item) => createMediaTimelineEntry(item, normalizedSettings, endTimestamp))
+    .map((item) => createMediaTimelineEntry(item, effectiveSettings, endTimestamp))
     .filter(Boolean);
   const segments = [];
   let totalVideoDurationMs = 0;
@@ -690,7 +723,7 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
         startTrackpoint,
         endTrackpoint,
         fullActivityDurationMs,
-        normalizedSettings,
+        effectiveSettings,
         fixedSpeedMetersPerSecond,
       );
       const videoDurationMs =

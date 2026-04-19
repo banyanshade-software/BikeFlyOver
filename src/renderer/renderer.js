@@ -3811,6 +3811,12 @@ function getExportTimingModeSummary(timingMode) {
     return "Uses the original activity timeline evenly with a single time-compression multiplier.";
   }
 
+  // F-29: target-duration mode description.
+  if (timingMode === "target-duration") {
+    return "Stretches or compresses the activity uniformly so the output video matches the entered duration exactly.";
+  }
+  // end F-29
+
   return "Compresses idle sections more aggressively and slows down fast movement to keep it readable.";
 }
 
@@ -3821,6 +3827,10 @@ function updateExportTimingControls() {
     "exportAdaptiveStrengthGroup",
     timingMode !== "adaptive-speed",
   );
+  // F-29: hide speed multiplier for target-duration (not user-facing); show target duration only for that mode.
+  setElementHidden("exportSpeedGroup", timingMode === "target-duration");
+  setElementHidden("exportTargetDurationGroup", timingMode !== "target-duration");
+  // end F-29
   setTextContent(
     "exportSpeedLabel",
     timingMode === "adaptive-speed"
@@ -3875,6 +3885,13 @@ function populateExportControls() {
   if (adaptiveStrengthInput instanceof HTMLInputElement) {
     adaptiveStrengthInput.value = String(EXPORT_OPTIONS.defaults.adaptiveStrength);
   }
+
+  // F-29: set default target duration from export defaults.
+  const targetDurationInput = document.getElementById("exportTargetDurationInput");
+  if (targetDurationInput instanceof HTMLInputElement) {
+    targetDurationInput.value = String(EXPORT_OPTIONS.defaults.targetDurationSeconds);
+  }
+  // end F-29
 
   if (photoDisplayDurationInput instanceof HTMLInputElement) {
     photoDisplayDurationInput.value = String(
@@ -4374,6 +4391,14 @@ function readExportSettings() {
       adaptiveStrengthInput instanceof HTMLInputElement
         ? Number(adaptiveStrengthInput.value)
         : EXPORT_OPTIONS.defaults.adaptiveStrength,
+    // F-29: read target duration from the dedicated input when the mode is target-duration.
+    targetDurationSeconds: (() => {
+      const targetDurationInput = document.getElementById("exportTargetDurationInput");
+      return targetDurationInput instanceof HTMLInputElement
+        ? Number(targetDurationInput.value)
+        : EXPORT_OPTIONS.defaults.targetDurationSeconds;
+    })(),
+    // end F-29
     cameraMode:
       cameraModeSelect instanceof HTMLSelectElement
         ? cameraModeSelect.value

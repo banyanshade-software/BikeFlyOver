@@ -127,3 +127,38 @@ test("fixed-speed export frame state reaches the final activity timestamp on the
     },
   );
 });
+
+// F-29: target-duration mode produces exactly the requested video length.
+test("target-duration export timeline produces the requested video length", () => {
+  const exportTimeline = buildExportTimeline({
+    settings: {
+      fps: 10,
+      targetDurationSeconds: 5,
+      timingMode: "target-duration",
+    },
+    trackpoints,
+  });
+
+  assert.equal(exportTimeline.totalVideoDurationMs, 5_000);
+  assert.equal(
+    computeExportFrameCount({
+      exportTimeline,
+      fps: 10,
+    }),
+    51,
+  );
+
+  assert.deepEqual(
+    getExportFrameState({
+      exportTimeline,
+      frameIndex: 50,
+      fps: 10,
+    }),
+    {
+      activeMedia: null,
+      activityTimestamp: 10_000,
+      videoTimeMs: 5_000,
+    },
+  );
+});
+// end F-29
