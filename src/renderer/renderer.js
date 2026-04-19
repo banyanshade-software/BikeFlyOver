@@ -1490,7 +1490,7 @@ function preloadImageSource(src, timeoutMs = 4000) {
   });
 }
 
-async function syncPreviewVideoFrame(videoElement, item, currentTimeMs) {
+async function syncPreviewVideoFrame(videoElement, item, currentTimeMs, options = {}) {
   const previewUrl = item.previewUrl || getMediaPreviewUrl(item.filePath);
 
   if (!previewUrl) {
@@ -1525,7 +1525,12 @@ async function syncPreviewVideoFrame(videoElement, item, currentTimeMs) {
   }
 
   videoElement.pause();
-  await waitForAnimationFrame();
+  // In export mode the Cesium settle loop (settleSceneForCapture) runs immediately
+  // after and already fires during a requestAnimationFrame callback, so a dedicated
+  // rAF here is redundant and adds ~16 ms of latency per frame.
+  if (!options.skipFinalAnimationFrame) {
+    await waitForAnimationFrame();
+  }
 }
 
 // F-67: async overlay driver - shows image thumbnail or seeked video frame for the active media item, hides when no active item
@@ -1552,6 +1557,7 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
   const activeMedia = Object.prototype.hasOwnProperty.call(options, "activeMedia")
     ? options.activeMedia
     : options.exportActiveMedia;
+  const { skipFinalAnimationFrame = false } = options;
   const presentation = resolveMediaPresentationForRender(playbackState, {
     activeMedia,
   });
@@ -1601,7 +1607,9 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
 
       fallbackElement.hidden = true;
       imageElement.hidden = false;
-      await waitForAnimationFrame();
+      if (!skipFinalAnimationFrame) {
+        await waitForAnimationFrame();
+      }
     } catch (error) {
       imageElement.hidden = true;
       fallbackElement.hidden = false;
@@ -1620,6 +1628,7 @@ async function updateMediaPreviewOverlay(playbackState, options = {}) {
         videoElement,
         activeItem,
         presentation.videoCurrentTimeMs,
+        { skipFinalAnimationFrame },
       );
 
       if (requestToken !== mediaLibraryState.previewRequestToken) {
@@ -4632,6 +4641,7 @@ async function applyRendererFrame(viewer, playbackState, frameState, options = {
     deterministicCamera = false,
     isCancelled = () => false,
     settleSettings = null,
+    settleHints = null,
     updateUi = false,
     waitForMedia = false,
   } = options;
@@ -4643,12 +4653,15 @@ async function applyRendererFrame(viewer, playbackState, frameState, options = {
   });
   await updateMediaPreviewOverlay(playbackState, {
     awaitVideoFrame: waitForMedia,
+    skipFinalAnimationFrame: waitForMedia,
     activeMedia,
   });
 
   if (settleSettings) {
-    await settleSceneForCapture(viewer, settleSettings, isCancelled);
+    return settleSceneForCapture(viewer, settleSettings, isCancelled, settleHints ?? {});
   }
+
+  return null;
 }
 
 function waitForNextRender(scene, timeoutMs, isCancelled) {
@@ -4695,10 +4708,16 @@ function waitForNextRender(scene, timeoutMs, isCancelled) {
   });
 }
 
-async function settleSceneForCapture(viewer, settings, isCancelled) {
+async function settleSceneForCapture(viewer, settings, isCancelled, hints = {}) {
   const scene = viewer.scene;
-  let stablePasses = 0;
-  let lastQueueLength = scene.globe.tilesLoaded ? 0 : 1;
+  // Carry tile stability from the previous frame: if tiles were fully loaded after
+  // the last settled frame and are still loaded now, skip the stable-wait loop and
+  // go directly to the final render pass. This saves settleStablePasses render cycles
+  // per frame for consecutive frames that share the same loaded tile set.
+  const tilesStableNow = scene.globe.tilesLoaded;
+  let stablePasses =
+    hints.tilesAlreadyStable && tilesStableNow ? settings.settleStablePasses : 0;
+  let lastQueueLength = tilesStableNow ? 0 : 1;
 
   const onTileLoadProgress = (queueLength) => {
     lastQueueLength = queueLength;
@@ -4718,12 +4737,13 @@ async function settleSceneForCapture(viewer, settings, isCancelled) {
     }
 
     await waitForNextRender(scene, settings.settleTimeoutMs, isCancelled);
+    return scene.globe.tilesLoaded && lastQueueLength === 0;
   } finally {
     scene.globe.tileLoadProgressEvent.removeEventListener(onTileLoadProgress);
   }
 }
 
-async function renderExportFrame(viewer, playbackState, payload) {
+async function renderExportFrame(viewer, playbackState, payload, exportBridgeState) {
   stopPlayback(playbackState);
   playbackState.isPlaying = false;
   applyRendererSettings(viewer, playbackState, payload.settings);
@@ -4732,7 +4752,7 @@ async function renderExportFrame(viewer, playbackState, payload) {
   // route to flash/flicker (Cesium marks the primitive dirty and may render a blank frame
   // while rebuilding GPU geometry). Terrain heights and route positions are constant for
   // the entire export session, so there is nothing to rebuild here.
-  await applyRendererFrame(
+  const tilesStable = await applyRendererFrame(
     viewer,
     playbackState,
     {
@@ -4744,14 +4764,20 @@ async function renderExportFrame(viewer, playbackState, payload) {
         return playbackState.export.cancelRequested;
       },
       settleSettings: payload.settings,
+      // Carry tile stability from the previous frame so the settle loop can be
+      // skipped entirely when the tile set hasn't changed between frames.
+      settleHints: { tilesAlreadyStable: exportBridgeState.lastFrameTilesStable },
       waitForMedia: true,
     },
   );
+  // Record tile stability so the next frame can benefit from the carry-over.
+  exportBridgeState.lastFrameTilesStable = tilesStable === true;
 }
 
 function setupExportRenderBridge(viewer, playbackState) {
   const exportBridgeState = {
     previewSnapshot: null,
+    lastFrameTilesStable: false,
   };
 
   window.bikeFlyOverApp?.onExportCancel(() => {
@@ -4779,7 +4805,7 @@ function setupExportRenderBridge(viewer, playbackState) {
     });
 
     try {
-      await applyRendererFrame(
+      const tilesStable = await applyRendererFrame(
         viewer,
         playbackState,
         {
@@ -4791,6 +4817,7 @@ function setupExportRenderBridge(viewer, playbackState) {
           waitForMedia: false,
         },
       );
+      exportBridgeState.lastFrameTilesStable = tilesStable === true;
       window.bikeFlyOverApp.notifyExportPrepared();
     } catch (error) {
       const message =
@@ -4803,6 +4830,7 @@ function setupExportRenderBridge(viewer, playbackState) {
 
   window.bikeFlyOverApp?.onExportReset(async () => {
     setExportSessionState(viewer, false);
+    exportBridgeState.lastFrameTilesStable = false;
     await restorePreviewSnapshot(viewer, playbackState, exportBridgeState.previewSnapshot);
     void updateMediaPreviewOverlay(playbackState);
     exportBridgeState.previewSnapshot = null;
@@ -4812,7 +4840,7 @@ function setupExportRenderBridge(viewer, playbackState) {
     playbackState.export.cancelRequested = false;
 
     try {
-      await renderExportFrame(viewer, playbackState, payload);
+      await renderExportFrame(viewer, playbackState, payload, exportBridgeState);
       window.bikeFlyOverApp.notifyExportFrameSettled({
         frameIndex: payload.frameIndex,
       });

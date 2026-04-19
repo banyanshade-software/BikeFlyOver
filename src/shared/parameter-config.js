@@ -149,7 +149,7 @@ const EXPORT_SETTINGS_FIELDS = freezeDefinitionMap({
   },
   settleStablePasses: {
     type: "integer",
-    default: 2,
+    default: 1,
     min: 1,
   },
   maxFrameRetries: {
