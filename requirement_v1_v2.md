@@ -54,8 +54,8 @@ These capabilities already exist in the current proof of concept and should be t
 | F-26 |v3  | Overlay | Add overlay positioning and style presets | Needed to avoid one fixed layout | Not implemented |
 | F-27 |v3  | Export | Expand export settings beyond current basics: output bitrate/quality profile | Improves control over file size and quality | Partial |
 | F-28 |v2  | Export | Let users choose aspect preset explicitly as landscape / square / portrait | Required by the spec, partly covered today by resolution presets | Partial |
-| F-29 |v2  | Export | Add export duration mode as alternative to speed multiplier | Mentioned in the render plan and useful for simpler UX | Not implemented |
-| F-30 |v2  | Export | Add export summary dialog with output path, estimated frame count, and warnings | Improves usability and reduces accidental long exports | Not implemented |
+| F-29 |v2  | Export | Add export duration mode as alternative to speed multiplier | Mentioned in the render plan and useful for simpler UX | implemented |
+| F-30 |v2  | Export | Add export summary dialog with output path, estimated frame count, and warnings | Improves usability and reduces accidental long exports | implemented |
 | F-31 |v3  | Export | Preserve debug frame sequence on failure and expose it clearly in the UI | Useful for troubleshooting failed exports | Partial |
 | F-32 |v3  | Export | Add resumable / restartable export workflow for failed long renders | Important for long projects | Not implemented |
 | F-33 |v3  | Project | Save project locally with references to imported traces, media, timeline edits, camera setup, and export settings | Required by the spec | Not implemented |
@@ -96,7 +96,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-71 |v3  | Import | Loading of track and media can be done by drag and drop | new requirement | Not implemented |
 | F-72 |v2  | Overlay | Overlay backgroud should be 50% transparent | new requirement | Implemented |
 | F-73 |v2  | Overlay | graphical overlay (such as speed gauge) should have a size proportional to exported video size | new requirement | Not implemented |
-| F-74 |v2  | Overlay | speed overlay as text in addition to graphical gauge (so that the user can chose) | new requirement | Not implemented |
+| F-74 |v2  | Overlay | speed overlay as text in addition to graphical gauge (so that the user can chose) | new requirement | implemented |
 | F-75 |v2  | Timeline | aibility to truncate timeline and export only part of it (for instance work and export all track except first hour and last x minutes) | new requirement | Implemented |
 | F-76 |v2  | Media | User can choose animation effect for photo/video enter and exit transitions; photos default to letterbox/pillarbox (contain), with an optional "allow crop" toggle for fill-frame mode | new requirement | Implemented |
 
