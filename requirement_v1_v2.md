@@ -23,7 +23,7 @@ These capabilities already exist in the current proof of concept and should be t
 | ID | Version | Category | Feature | Why it matters | Current state |
 | --- | --- | --- | --- | --- | --- |
 | F-01 |v3  | Import | Import user-selected TCX files from file picker | Required by the spec for real user activity input | Not implemented |
-| F-167 |v3  | Import | Import GPX files | implicit requirement | Not implemented |
+| F-167 |v3  | Import | Import GPX files | implicit requirement | implemented |
 | F-02 |v3  | Import | Import FIT files | FIT is explicitly required by the spec | Not implemented |
 | F-03 |v3  | Import | Support drag-and-drop import for traces, photos, and videos | Required by the spec and improves workflow speed | Not implemented |
 | F-04 |v3  | Import | Support menu-driven import commands | Required by the spec for discoverability and desktop UX | Not implemented |
