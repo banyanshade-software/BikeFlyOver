@@ -33,6 +33,52 @@ function getTimingModeLabel(timingMode) {
   );
 }
 
+// F-30: build a human-readable export summary and warn for expensive settings.
+const EXPORT_WARNING_FRAME_THRESHOLD = 3000;
+const EXPORT_WARNING_PIXEL_THRESHOLD = 1280 * 720;
+
+function buildExportSummaryLines(outputPath, normalizedSettings, totalFrames) {
+  const durationSeconds = totalFrames / normalizedSettings.fps;
+  const lines = [
+    `Output:     ${outputPath}`,
+    `Resolution: ${normalizedSettings.width} × ${normalizedSettings.height} at ${normalizedSettings.fps} fps`,
+    `Timing:     ${getTimingModeLabel(normalizedSettings.timingMode)}`,
+    `Frames:     ${totalFrames} (~${durationSeconds.toFixed(1)} s)`,
+  ];
+
+  const warnings = [];
+  if (totalFrames > EXPORT_WARNING_FRAME_THRESHOLD) {
+    warnings.push(`Large frame count (${totalFrames}) — export may take a long time.`);
+  }
+  if (normalizedSettings.width * normalizedSettings.height > EXPORT_WARNING_PIXEL_THRESHOLD) {
+    warnings.push(
+      `High resolution (${normalizedSettings.width}×${normalizedSettings.height}) — requires more memory and time.`,
+    );
+  }
+
+  if (warnings.length > 0) {
+    lines.push("", "⚠ Warnings:", ...warnings.map((w) => `  • ${w}`));
+  }
+
+  return lines;
+}
+
+async function showExportSummaryDialog(outputPath, normalizedSettings, totalFrames) {
+  const summaryLines = buildExportSummaryLines(outputPath, normalizedSettings, totalFrames);
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: "question",
+    title: "Confirm Export",
+    message: "Ready to export",
+    detail: summaryLines.join("\n"),
+    buttons: ["Export", "Cancel"],
+    defaultId: 0,
+    cancelId: 1,
+  });
+
+  return result.response === 0;
+}
+// end F-30
+
 if (isSmokeTest) {
   app.commandLine.appendSwitch("use-angle", "swiftshader");
   app.commandLine.appendSwitch("enable-unsafe-swiftshader");
@@ -540,6 +586,17 @@ async function startExport(settings) {
     exportTimeline,
     fps: normalizedSettings.fps,
   });
+
+  // F-30: show summary dialog; let user confirm before committing to a temp dir and session.
+  const confirmed = await showExportSummaryDialog(outputPath, normalizedSettings, totalFrames);
+  if (!confirmed) {
+    return {
+      started: false,
+      cancelled: true,
+    };
+  }
+  // end F-30
+
   const tempDir = await fs.mkdtemp(
     path.join(os.tmpdir(), "bikeflyover-export-"),
   );
