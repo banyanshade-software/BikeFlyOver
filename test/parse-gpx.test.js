@@ -1,6 +1,11 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { parseGpxTrack, summarizeTrackpoints } = require("../src/io/gpx/parseGpx");
+const {
+  parseGpxTrack,
+  summarizeTrackpoints,
+  ROUTE_SPEED_MS,
+  ROUTE_SYNTHETIC_ORIGIN_MS,
+} = require("../src/io/gpx/parseGpx");
 
 // Minimal valid GPX activity with timestamps and all extension fields.
 const FULL_GPX = `<?xml version="1.0" encoding="UTF-8"?>
@@ -122,19 +127,41 @@ test("parseGpxTrack flattens multiple trk elements", () => {
   assert.equal(trackpoints[1].latitude, 47.1);
 });
 
-test("parseGpxTrack throws for route GPX with no timestamps", () => {
+test("parseGpxTrack synthesizes timestamps for route GPX with no <time> at 20 km/h", () => {
+  // Two points roughly 1 degree of latitude apart (~111 km).
+  // Expected Δt ≈ 111000 m / (20000/3600 m/s) * 1000 ms ≈ 19980000 ms ≈ 19980 s.
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1">
   <trk><trkseg>
-    <trkpt lat="46.1" lon="6.2"><ele>400</ele></trkpt>
-    <trkpt lat="46.2" lon="6.3"><ele>410</ele></trkpt>
+    <trkpt lat="0.0" lon="0.0"><ele>100</ele></trkpt>
+    <trkpt lat="1.0" lon="0.0"><ele>110</ele></trkpt>
   </trkseg></trk>
 </gpx>`;
 
-  assert.throws(
-    () => parseGpxTrack(xml),
-    /Route files cannot be used as activity input/,
+  const trackpoints = parseGpxTrack(xml);
+  assert.equal(trackpoints.length, 2);
+
+  // First point starts at synthetic origin.
+  assert.equal(trackpoints[0].timestamp, ROUTE_SYNTHETIC_ORIGIN_MS);
+  assert.equal(trackpoints[0].distance, 0);
+
+  // Second point timestamp is derived from Haversine distance at ROUTE_SPEED_MS.
+  const approxDistM = 111194; // ~1 degree latitude in metres
+  const expectedDeltaMs = Math.round((approxDistM / ROUTE_SPEED_MS) * 1000);
+  const actualDeltaMs = trackpoints[1].timestamp - trackpoints[0].timestamp;
+  // Allow ±500 ms tolerance for the Haversine approximation.
+  assert.ok(
+    Math.abs(actualDeltaMs - expectedDeltaMs) < 500,
+    `Expected Δt ≈ ${expectedDeltaMs} ms, got ${actualDeltaMs} ms`,
   );
+
+  // distance field is cumulative metres, not null.
+  assert.ok(trackpoints[1].distance > 0);
+  assert.ok(Math.abs(trackpoints[1].distance - approxDistM) < 500);
+
+  // All metrics are null (no sensor data in a route file).
+  assert.equal(trackpoints[0].heartRate, null);
+  assert.equal(trackpoints[0].speed, null);
 });
 
 test("parseGpxTrack throws for empty or all-invalid GPX", () => {

@@ -7,6 +7,10 @@ function getSampleTrackPath() {
   return path.join(__dirname, "../../samples/activity.tcx");
 }
 
+function getSampleGpxPath() {
+  return path.join(__dirname, "../../samples/activity.gpx");
+}
+
 // F-167: generic loader that dispatches to the correct parser by file extension.
 async function loadActivityFile(filePath) {
   const xml = await fs.readFile(filePath, "utf8");
@@ -24,8 +28,22 @@ async function loadActivityFile(filePath) {
 // end F-167
 
 async function loadSampleTrack() {
-  const samplePath = getSampleTrackPath();
+  // Try the canonical TCX first; fall back to GPX if it doesn't exist.
+  let samplePath = getSampleTrackPath();
+  console.debug(`[sample-track] trying ${samplePath}`);
+  try {
+    await fs.access(samplePath);
+  } catch {
+    samplePath = getSampleGpxPath();
+    console.debug(`[sample-track] TCX not found, falling back to ${samplePath}`);
+  }
+
+  console.debug(`[sample-track] loading ${samplePath}`);
   const result = await loadActivityFile(samplePath);
+  console.debug(
+    `[sample-track] loaded ${result.fileName}: ${result.summary.pointCount} points, ` +
+      `${result.summary.durationSeconds}s`,
+  );
 
   return {
     ...result,
