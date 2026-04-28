@@ -2730,6 +2730,10 @@ function createViewer(renderMode) {
     throw new Error("Cesium failed to load in the renderer.");
   }
 
+    const accessToken = "ad546ccd046c48cda8e19656bded2962";
+    Cesium.ArcGisMapService.defaultAccessToken = accessToken;
+
+  
   const viewer = new Cesium.Viewer("cesiumContainer", {
     animation: false,
     baseLayer: createBaseLayer(Cesium),
