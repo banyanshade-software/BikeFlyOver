@@ -43,30 +43,30 @@ const OVERLAY_VISIBILITY_FIELDS = freezeDefinitionMap({
 const CAMERA_SETTINGS_FIELDS = freezeDefinitionMap({
   followDistanceMeters: {
     type: "number",
-    default: 500,
+    default: 800,
     min: 80,
-    max: 800,
+    max: 9000,
     step: 5,
   },
   followAltitudeOffsetMeters: {
     type: "number",
     default: 30,
     min: 2,
-    max: 180,
+    max: 380,
     step: 1,
   },
   followPitchDegrees: {
     type: "number",
     default: 32,
-    min: 15,
+    min: 5,
     max: 85,
     step: 1,
   },
   lookAheadDistanceMeters: {
     type: "number",
-    default: 200,
+    default: 700,
     min: 10,
-    max: 300,
+    max: 7000,
     step: 1,
   },
   lookAheadPointWindow: {
@@ -80,7 +80,7 @@ const CAMERA_SETTINGS_FIELDS = freezeDefinitionMap({
     type: "number",
     default: 2,
     min: 0.25,
-    max: 3,
+    max: 4,
     step: 0.05,
   },
   overviewPitchDegrees: {
