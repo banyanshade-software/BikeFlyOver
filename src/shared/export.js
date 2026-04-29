@@ -78,6 +78,13 @@ const EXPORT_TIMING_MODES = [
   // end F-29
 ];
 
+// F-web: web-only export strategies; ignored in Electron (ffmpeg binary is always used).
+const EXPORT_STRATEGY_MODES = [
+  { id: "media-recorder", label: "MediaRecorder (real-time, WebM)" },
+  { id: "ffmpeg-wasm", label: "ffmpeg.wasm (frame-by-frame, MP4)" },
+];
+// end F-web
+
 const EXPORT_DEFAULTS = {
   resolutionId: EXPORT_ENUM_DEFAULTS.resolutionId,
   width:
@@ -111,6 +118,9 @@ const EXPORT_DEFAULTS = {
   imageFit: MEDIA_PRESENTATION_DEFAULTS.imageFit,
   // end F-76
   overlayVisibility: OVERLAY_VISIBILITY_DEFAULTS,
+  // F-web: default to MediaRecorder for web mode; ignored in Electron.
+  exportStrategy: "media-recorder",
+  // end F-web
 };
 
 function getResolutionPresetById(resolutionId) {
@@ -379,6 +389,13 @@ function normalizeExportSettings(rawSettings = {}) {
     overlayVisibility: normalizeOverlayVisibilitySettings(
       rawSettings.overlayVisibility,
     ),
+    // F-web: pass exportStrategy through so the web export engine can branch on it.
+    exportStrategy: EXPORT_STRATEGY_MODES.some(
+      (mode) => mode.id === rawSettings.exportStrategy,
+    )
+      ? rawSettings.exportStrategy
+      : EXPORT_DEFAULTS.exportStrategy,
+    // end F-web
     ...normalizeMediaPresentationSettings(rawSettings),
   };
 }
@@ -972,6 +989,9 @@ module.exports = {
   EXPORT_DEFAULTS,
   EXPORT_RESOLUTION_PRESETS,
   EXPORT_SETTINGS_FIELDS,
+  // F-web: export strategy modes so preload/app-api can expose them to the renderer.
+  EXPORT_STRATEGY_MODES,
+  // end F-web
   EXPORT_TIMING_MODES,
   buildExportTimeline,
   computeExportFrameCount,

@@ -17,6 +17,9 @@ const {
   TERRAIN_SETTINGS_FIELDS,
   // end F-69
   EXPORT_TIMING_MODES,
+  // F-web: expose strategy modes so the renderer can populate the web-only export engine selector.
+  EXPORT_STRATEGY_MODES,
+  // end F-web
 } = require("../shared/export");
 const {
   // F-72/F-73/F-74: expose gauge size constants so renderer can compute proportional gauge scaling.
@@ -79,6 +82,9 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
       resolutionPresets: EXPORT_RESOLUTION_PRESETS,
       cameraModes: EXPORT_CAMERA_MODES,
       timingModes: EXPORT_TIMING_MODES,
+      // F-web: expose strategy modes so the renderer can populate the web-only export engine selector.
+      exportStrategyModes: EXPORT_STRATEGY_MODES,
+      // end F-web
       // F-76: expose animation effect IDs and labels (plain data only — functions cannot cross the context bridge).
       mediaAnimationEffects: Object.entries(MEDIA_ANIMATION_EFFECTS).map(
         ([id, { label }]) => ({ id, label }),

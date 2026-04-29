@@ -3938,6 +3938,14 @@ function populateExportControls() {
   // end F-76
 
   updateExportTimingControls();
+
+  // F-web: populate the web-only export strategy select (no-op in Electron where the element is absent).
+  populateSelect(
+    document.getElementById("exportStrategySelect"),
+    EXPORT_OPTIONS.exportStrategyModes ?? [],
+    EXPORT_OPTIONS.defaults?.exportStrategy ?? "media-recorder",
+  );
+  // end F-web
 }
 
 function updateMediaLibraryUi() {
@@ -4435,6 +4443,14 @@ function readExportSettings() {
     animationEffect: mediaPresentationSettings.animationEffect,
     imageFit: mediaPresentationSettings.imageFit,
     // end F-76
+    // F-web: read exportStrategy from the web-only select; falls back to default in Electron (element absent).
+    exportStrategy: (() => {
+      const sel = document.getElementById("exportStrategySelect");
+      return sel instanceof HTMLSelectElement
+        ? sel.value
+        : (EXPORT_OPTIONS.defaults?.exportStrategy ?? "media-recorder");
+    })(),
+    // end F-web
   };
 }
 
