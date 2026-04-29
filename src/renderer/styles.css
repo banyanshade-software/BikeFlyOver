@@ -685,6 +685,21 @@ body {
 }
 /* end F-67 */
 
+/* F-66: mini-map canvas anchored to the bottom-right of the viewer; media preview sits above it (z-index 10) on media frames */
+.map-inset-canvas {
+  position: absolute;
+  bottom: 1.25rem;
+  right: 1.25rem;
+  z-index: 8;
+  width: clamp(120px, 13vw, 190px);
+  aspect-ratio: 4 / 3;
+  border-radius: 0.7rem;
+  border: 1px solid rgba(121, 189, 255, 0.28);
+  background: rgba(7, 18, 29, 0.7);
+  pointer-events: none;
+}
+/* end F-66 */
+
 .export-mode .app-header,
 .export-mode .summary-panel,
 .export-session-active .app-header,

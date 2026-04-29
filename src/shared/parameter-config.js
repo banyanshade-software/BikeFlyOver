@@ -38,6 +38,9 @@ const OVERLAY_VISIBILITY_FIELDS = freezeDefinitionMap({
   speedText: { type: "boolean", default: false },
   // end F-74
   heartRateGauge: { type: "boolean", default: true },
+  // F-66: north-up mini-map inset shown during preview and export
+  mapInset: { type: "boolean", default: true },
+  // end F-66
 });
 
 const CAMERA_SETTINGS_FIELDS = freezeDefinitionMap({

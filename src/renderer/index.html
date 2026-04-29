@@ -264,6 +264,12 @@
                 <input id="overlayHeartRateGaugeCheckbox" type="checkbox" />
                 <span>Show heart rate gauge</span>
               </label>
+              <!-- F-66: map inset toggle -->
+              <label class="checkbox-group" for="overlayMapInsetCheckbox">
+                <input id="overlayMapInsetCheckbox" type="checkbox" />
+                <span>Show map inset</span>
+              </label>
+              <!-- end F-66 -->
               <label class="field-group" for="overlaySpeedGaugeMaxInput">
                 <span class="field-label">Speedometer max speed (km/h)</span>
                 <input id="overlaySpeedGaugeMaxInput" type="number" />
@@ -521,6 +527,9 @@
             </article>
           </aside>
           <!-- end F-67 -->
+          <!-- F-66: north-up mini-map canvas overlay; drawn by renderer.js via drawMapInset -->
+          <canvas id="mapInsetCanvas" class="map-inset-canvas" aria-hidden="true"></canvas>
+          <!-- end F-66 -->
       </main>
     </div>
     <script src="./renderer.js"></script>

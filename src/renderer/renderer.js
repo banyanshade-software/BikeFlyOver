@@ -109,6 +109,13 @@ const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
     checkboxId: "overlayHeartRateGaugeCheckbox",
     elementId: "metricOverlayHeartRateGaugeCard",
   },
+  {
+    // F-66: map inset canvas toggle
+    key: "mapInset",
+    checkboxId: "overlayMapInsetCheckbox",
+    elementId: "mapInsetCanvas",
+    // end F-66
+  },
 ]);
 const TIMELINE_SCRUB_KEYS = new Set([
   "ArrowLeft",
@@ -476,6 +483,13 @@ function applyOverlayVisibility(playbackState) {
   setElementHidden("metricOverlayPrimaryColumn", !primaryVisible);
   setElementHidden("metricOverlaySecondaryColumn", !secondaryVisible);
   setElementHidden("metricOverlay", !(primaryVisible || secondaryVisible));
+
+  // F-66: redraw the map inset immediately after visibility is applied so the canvas is never blank
+  // when the user toggles it on while playback is paused.
+  if (overlayVisibility.mapInset) {
+    drawMapInset(playbackState);
+  }
+  // end F-66
 }
 
 function setProgressState(elementIds, state) {
@@ -1768,6 +1782,9 @@ function createPlaybackState(trackpoints, options = {}) {
       speedGaugePeakKph: 0,
       speedGaugePeakTimestamp: fullStartTimestamp,
     },
+    // F-66: cached geographic bounds for the map inset; lazily populated by drawMapInset on first draw.
+    mapInsetBounds: null,
+    // end F-66
   };
 }
 
@@ -3151,6 +3168,109 @@ function updatePlaybackUI(playbackState) {
   }
 }
 
+// F-66: draw the north-up mini-map on the inset canvas; called from applyOverlayVisibility
+// so the canvas is always drawn immediately when visibility is applied (e.g. checkbox toggle while paused).
+function drawMapInset(playbackState) {
+  const canvas = document.getElementById("mapInsetCanvas");
+  if (!(canvas instanceof HTMLCanvasElement)) return;
+  const { trackpoints, currentIndex, currentSample } = playbackState;
+  if (!trackpoints || trackpoints.length === 0) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth;
+  const cssH = canvas.clientHeight;
+  if (cssW === 0 || cssH === 0) return;
+  const targetW = Math.round(cssW * dpr);
+  const targetH = Math.round(cssH * dpr);
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+  }
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const w = canvas.width;
+  const h = canvas.height;
+  const pad = Math.max(4, Math.round(w * 0.05));
+
+  // Lazy-compute geographic bounds and store on playbackState for reuse across frames.
+  if (!playbackState.mapInsetBounds) {
+    let minLat = Infinity, maxLat = -Infinity, minLon = Infinity, maxLon = -Infinity;
+    for (const tp of trackpoints) {
+      if (tp.latitude < minLat) minLat = tp.latitude;
+      if (tp.latitude > maxLat) maxLat = tp.latitude;
+      if (tp.longitude < minLon) minLon = tp.longitude;
+      if (tp.longitude > maxLon) maxLon = tp.longitude;
+    }
+    const midLat = (minLat + maxLat) / 2;
+    // Scale longitude deltas by cos(midLat) to reduce shape distortion at higher latitudes.
+    const lonCos = Math.cos((midLat * Math.PI) / 180);
+    playbackState.mapInsetBounds = { minLat, maxLat, minLon, maxLon, lonCos };
+  }
+
+  const { minLat, maxLat, minLon, maxLon, lonCos } = playbackState.mapInsetBounds;
+  const latRange = maxLat - minLat || 0.001;
+  const lonRange = (maxLon - minLon) * lonCos || 0.001;
+  const drawW = w - 2 * pad;
+  const drawH = h - 2 * pad;
+  const scale = Math.min(drawW / lonRange, drawH / latRange);
+  const offsetX = pad + (drawW - lonRange * scale) / 2;
+  const offsetY = pad + (drawH - latRange * scale) / 2;
+
+  const toX = (lon) => offsetX + (lon - minLon) * lonCos * scale;
+  const toY = (lat) => offsetY + (maxLat - lat) * scale; // flip Y: north=up
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Full route (faint white = remaining/total path).
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+  ctx.lineWidth = Math.max(1, w / 100);
+  for (let i = 0; i < trackpoints.length; i++) {
+    const x = toX(trackpoints[i].longitude);
+    const y = toY(trackpoints[i].latitude);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Played portion in blue, extended to the interpolated current position.
+  const safeIndex = Math.min(Math.max(0, currentIndex), trackpoints.length - 1);
+  ctx.beginPath();
+  ctx.strokeStyle = "rgba(80, 180, 255, 0.9)";
+  ctx.lineWidth = Math.max(1.5, w / 70);
+  for (let i = 0; i <= safeIndex; i++) {
+    const x = toX(trackpoints[i].longitude);
+    const y = toY(trackpoints[i].latitude);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  if (
+    currentSample &&
+    Number.isFinite(currentSample.longitude) &&
+    Number.isFinite(currentSample.latitude)
+  ) {
+    ctx.lineTo(toX(currentSample.longitude), toY(currentSample.latitude));
+  }
+  ctx.stroke();
+
+  // Current position dot using the interpolated sample for smooth movement.
+  const dotLat = currentSample?.latitude ?? trackpoints[safeIndex].latitude;
+  const dotLon = currentSample?.longitude ?? trackpoints[safeIndex].longitude;
+  if (Number.isFinite(dotLat) && Number.isFinite(dotLon)) {
+    const cx = toX(dotLon);
+    const cy = toY(dotLat);
+    const dotR = Math.max(3, w / 40);
+    ctx.beginPath();
+    ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+    ctx.fillStyle = "#fff";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(80, 180, 255, 1)";
+    ctx.lineWidth = Math.max(1, w / 80);
+    ctx.stroke();
+  }
+}
+// end F-66
+
 function updateMetricOverlay(playbackState) {
   const speedGaugeDial = document.getElementById("metricOverlaySpeedGaugeDial");
   const heartRateGaugeCard = document.getElementById("metricOverlayHeartRateGaugeCard");
@@ -4366,6 +4486,9 @@ function updateExportUi(statusUpdate) {
   setElementDisabled("overlaySpeedTextCheckbox", exportUiState.isExporting);
   setElementDisabled("overlayHeartRateGaugeCheckbox", exportUiState.isExporting);
   setElementDisabled("overlaySpeedGaugeMaxInput", exportUiState.isExporting);
+  // F-66: lock map inset toggle during export, consistent with other overlay controls
+  setElementDisabled("overlayMapInsetCheckbox", exportUiState.isExporting);
+  // end F-66
   setElementDisabled(
     "importMediaButton",
     exportUiState.isExporting || mediaLibraryState.isImporting,
