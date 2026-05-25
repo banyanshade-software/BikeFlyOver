@@ -54,66 +54,55 @@
               <dd id="routeStatus">Waiting for render...</dd>
             </div>
           </dl>
+          <!-- F-38: collapsible Playback section -->
           <section class="controls-panel" aria-label="Playback controls">
-            <h2>Playback</h2>
-            <div class="button-row">
-              <button id="playPauseButton" type="button">Pause</button>
-              <button id="restartButton" type="button">Restart</button>
-            </div>
-            <dl class="summary-list summary-list--compact summary-list--two-column">
-              <div>
-                <dt>Status</dt>
-                <dd id="playbackStatus">Loading...</dd>
+            <details id="sectionDetailsPlayback" class="section-details" open>
+              <summary class="section-summary"><h2>Playback</h2></summary>
+              <div class="button-row">
+                <button id="playPauseButton" type="button">Pause</button>
+                <button id="restartButton" type="button">Restart</button>
               </div>
-              <div>
-                <dt>Progress</dt>
-                <dd id="playbackProgress">-</dd>
-              </div>
-              <div>
-                <dt>Elapsed</dt>
-                <dd id="playbackElapsed">-</dd>
-              </div>
-              <div>
-                <dt>Duration</dt>
-                <dd id="playbackDuration">-</dd>
-              </div>
-              <div>
-                <dt>Activity time</dt>
-                <dd id="playbackCurrentTime">-</dd>
-              </div>
-              <div>
-                <dt>Distance</dt>
-                <dd id="playbackDistance">-</dd>
-              </div>
-              <div>
-                <dt>Speed</dt>
-                <dd id="playbackSpeed">-</dd>
-              </div>
-            </dl>
+              <dl class="summary-list summary-list--compact summary-list--two-column">
+                <div>
+                  <dt>Status</dt>
+                  <dd id="playbackStatus">Loading...</dd>
+                </div>
+                <div>
+                  <dt>Progress</dt>
+                  <dd id="playbackProgress">-</dd>
+                </div>
+                <div>
+                  <dt>Elapsed</dt>
+                  <dd id="playbackElapsed">-</dd>
+                </div>
+                <div>
+                  <dt>Duration</dt>
+                  <dd id="playbackDuration">-</dd>
+                </div>
+                <div>
+                  <dt>Activity time</dt>
+                  <dd id="playbackCurrentTime">-</dd>
+                </div>
+                <div>
+                  <dt>Distance</dt>
+                  <dd id="playbackDistance">-</dd>
+                </div>
+                <div>
+                  <dt>Speed</dt>
+                  <dd id="playbackSpeed">-</dd>
+                </div>
+              </dl>
+            </details>
           </section>
+          <!-- end F-38 -->
+          <!-- F-38: collapsible Timeline section -->
           <section class="controls-panel" aria-label="Timeline controls">
-            <h2>Timeline</h2>
-            <label class="field-group timeline-group" for="timelineSlider">
-              <span class="field-label">Current track position</span>
-              <input
-                id="timelineSlider"
-                class="timeline-slider"
-                type="range"
-                min="0"
-                max="1000"
-                step="1"
-                value="0"
-              />
-            </label>
-            <div class="timeline-scale" aria-live="polite">
-              <span id="timelineElapsed">00:00</span>
-              <span id="timelineDuration">00:00</span>
-            </div>
-            <div class="field-stack">
-              <label class="field-group timeline-group" for="timelineRangeStartSlider">
-                <span class="field-label">Range start</span>
+            <details id="sectionDetailsTimeline" class="section-details" open>
+              <summary class="section-summary"><h2>Timeline</h2></summary>
+              <label class="field-group timeline-group" for="timelineSlider">
+                <span class="field-label">Current track position</span>
                 <input
-                  id="timelineRangeStartSlider"
+                  id="timelineSlider"
                   class="timeline-slider"
                   type="range"
                   min="0"
@@ -122,298 +111,337 @@
                   value="0"
                 />
               </label>
-              <label class="field-group timeline-group" for="timelineRangeEndSlider">
-                <span class="field-label">Range end</span>
-                <input
-                  id="timelineRangeEndSlider"
-                  class="timeline-slider"
-                  type="range"
-                  min="0"
-                  max="1000"
-                  step="1"
-                  value="1000"
-                />
-              </label>
-            </div>
-            <dl class="summary-list summary-list--compact">
-              <div>
-                <dt>Selected start</dt>
-                <dd id="timelineRangeStartValue">00:00</dd>
+              <div class="timeline-scale" aria-live="polite">
+                <span id="timelineElapsed">00:00</span>
+                <span id="timelineDuration">00:00</span>
               </div>
-              <div>
-                <dt>Selected end</dt>
-                <dd id="timelineRangeEndValue">00:00</dd>
+              <div class="field-stack">
+                <label class="field-group timeline-group" for="timelineRangeStartSlider">
+                  <span class="field-label">Range start</span>
+                  <input
+                    id="timelineRangeStartSlider"
+                    class="timeline-slider"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="1"
+                    value="0"
+                  />
+                </label>
+                <label class="field-group timeline-group" for="timelineRangeEndSlider">
+                  <span class="field-label">Range end</span>
+                  <input
+                    id="timelineRangeEndSlider"
+                    class="timeline-slider"
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="1"
+                    value="1000"
+                  />
+                </label>
               </div>
-              <div>
-                <dt>Mode</dt>
-                <dd id="timelineRangeStatus">Full activity</dd>
+              <dl class="summary-list summary-list--compact">
+                <div>
+                  <dt>Selected start</dt>
+                  <dd id="timelineRangeStartValue">00:00</dd>
+                </div>
+                <div>
+                  <dt>Selected end</dt>
+                  <dd id="timelineRangeEndValue">00:00</dd>
+                </div>
+                <div>
+                  <dt>Mode</dt>
+                  <dd id="timelineRangeStatus">Full activity</dd>
+                </div>
+              </dl>
+              <div class="button-row">
+                <button id="resetTimelineRangeButton" type="button">Reset full range</button>
               </div>
-            </dl>
-            <div class="button-row">
-              <button id="resetTimelineRangeButton" type="button">Reset full range</button>
-            </div>
-            <p class="helper-text">
-              Preview playback, scrubbing, and export all use the selected range.
-            </p>
+              <p class="helper-text">
+                Preview playback, scrubbing, and export all use the selected range.
+              </p>
+            </details>
           </section>
+          <!-- end F-38 -->
+          <!-- F-38: collapsible Camera section (closed by default) -->
           <section class="controls-panel" aria-label="Camera controls">
-            <h2>Camera</h2>
-            <div class="button-row">
-              <button id="cameraModeButton" type="button">Switch to overview</button>
-            </div>
-            <dl class="summary-list summary-list--compact">
-              <div>
-                <dt>Mode</dt>
-                <dd id="cameraModeStatus">Loading...</dd>
+            <details id="sectionDetailsCamera" class="section-details">
+              <summary class="section-summary"><h2>Camera</h2></summary>
+              <div class="button-row">
+                <button id="cameraModeButton" type="button">Switch to overview</button>
               </div>
-            </dl>
-            <div class="field-stack">
-              <label class="field-group" for="cameraFollowDistanceInput">
-                <span class="field-label">Follow distance (m)</span>
-                <input id="cameraFollowDistanceInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraFollowAltitudeInput">
-                <span class="field-label">Follow altitude offset (m)</span>
-                <input id="cameraFollowAltitudeInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraFollowPitchInput">
-                <span class="field-label">Follow pitch (deg)</span>
-                <input id="cameraFollowPitchInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraLookAheadDistanceInput">
-                <span class="field-label">Look-ahead distance (m)</span>
-                <input id="cameraLookAheadDistanceInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraLookAheadWindowInput">
-                <span class="field-label">Look-ahead window (points)</span>
-                <input id="cameraLookAheadWindowInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraSmoothingStrengthInput">
-                <span class="field-label">Smoothing strength</span>
-                <input id="cameraSmoothingStrengthInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraOverviewPitchInput">
-                <span class="field-label">Overview pitch (deg)</span>
-                <input id="cameraOverviewPitchInput" type="number" />
-              </label>
-              <label class="field-group" for="cameraOverviewRangeMultiplierInput">
-                <span class="field-label">Overview range multiplier</span>
-                <input id="cameraOverviewRangeMultiplierInput" type="number" />
-              </label>
-            </div>
-            <p class="helper-text">
-              Camera edits apply immediately in preview and are reused during export.
-            </p>
+              <dl class="summary-list summary-list--compact">
+                <div>
+                  <dt>Mode</dt>
+                  <dd id="cameraModeStatus">Loading...</dd>
+                </div>
+              </dl>
+              <div class="field-stack">
+                <label class="field-group" for="cameraFollowDistanceInput">
+                  <span class="field-label">Follow distance (m)</span>
+                  <input id="cameraFollowDistanceInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraFollowAltitudeInput">
+                  <span class="field-label">Follow altitude offset (m)</span>
+                  <input id="cameraFollowAltitudeInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraFollowPitchInput">
+                  <span class="field-label">Follow pitch (deg)</span>
+                  <input id="cameraFollowPitchInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraLookAheadDistanceInput">
+                  <span class="field-label">Look-ahead distance (m)</span>
+                  <input id="cameraLookAheadDistanceInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraLookAheadWindowInput">
+                  <span class="field-label">Look-ahead window (points)</span>
+                  <input id="cameraLookAheadWindowInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraSmoothingStrengthInput">
+                  <span class="field-label">Smoothing strength</span>
+                  <input id="cameraSmoothingStrengthInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraOverviewPitchInput">
+                  <span class="field-label">Overview pitch (deg)</span>
+                  <input id="cameraOverviewPitchInput" type="number" />
+                </label>
+                <label class="field-group" for="cameraOverviewRangeMultiplierInput">
+                  <span class="field-label">Overview range multiplier</span>
+                  <input id="cameraOverviewRangeMultiplierInput" type="number" />
+                </label>
+              </div>
+              <p class="helper-text">
+                Camera edits apply immediately in preview and are reused during export.
+              </p>
+            </details>
           </section>
+          <!-- end F-38 -->
+          <!-- F-38: collapsible Terrain section (closed by default) -->
           <section class="controls-panel" aria-label="Terrain controls">
-            <h2>Terrain</h2>
-            <dl class="summary-list summary-list--compact">
-              <div>
-                <dt>Status</dt>
-                <dd id="terrainStatus">Loading 3D terrain...</dd>
+            <details id="sectionDetailsTerrain" class="section-details">
+              <summary class="section-summary"><h2>Terrain</h2></summary>
+              <dl class="summary-list summary-list--compact">
+                <div>
+                  <dt>Status</dt>
+                  <dd id="terrainStatus">Loading 3D terrain...</dd>
+                </div>
+              </dl>
+              <div class="field-stack">
+                <label class="checkbox-group" for="terrainEnabledCheckbox">
+                  <input id="terrainEnabledCheckbox" type="checkbox" />
+                  <span>Enable 3D terrain</span>
+                </label>
+                <label class="field-group" for="terrainExaggerationInput">
+                  <span class="field-label">Terrain exaggeration</span>
+                  <input id="terrainExaggerationInput" type="number" />
+                </label>
               </div>
-            </dl>
-            <div class="field-stack">
-              <label class="checkbox-group" for="terrainEnabledCheckbox">
-                <input id="terrainEnabledCheckbox" type="checkbox" />
-                <span>Enable 3D terrain</span>
-              </label>
-              <label class="field-group" for="terrainExaggerationInput">
-                <span class="field-label">Terrain exaggeration</span>
-                <input id="terrainExaggerationInput" type="number" />
-              </label>
-            </div>
-            <p class="helper-text">
-              Terrain exaggeration affects preview and export. The route stays on or just above the terrain surface.
-            </p>
+              <p class="helper-text">
+                Terrain exaggeration affects preview and export. The route stays on or just above the terrain surface.
+              </p>
+            </details>
           </section>
+          <!-- end F-38 -->
+          <!-- F-38: collapsible Overlays section (closed by default) -->
           <section class="controls-panel" aria-label="Overlay controls">
-            <h2>Overlays</h2>
-            <div class="field-stack">
-              <label class="checkbox-group" for="overlayTimeMetricCheckbox">
-                <input id="overlayTimeMetricCheckbox" type="checkbox" />
-                <span>Show time metric</span>
-              </label>
-              <label class="checkbox-group" for="overlayDistanceMetricCheckbox">
-                <input id="overlayDistanceMetricCheckbox" type="checkbox" />
-                <span>Show distance metric</span>
-              </label>
-              <label class="checkbox-group" for="overlayAltitudeMetricCheckbox">
-                <input id="overlayAltitudeMetricCheckbox" type="checkbox" />
-                <span>Show altitude metric</span>
-              </label>
-              <label class="checkbox-group" for="overlayCadenceMetricCheckbox">
-                <input id="overlayCadenceMetricCheckbox" type="checkbox" />
-                <span>Show cadence metric</span>
-              </label>
-              <label class="checkbox-group" for="overlayTemperatureMetricCheckbox">
-                <input id="overlayTemperatureMetricCheckbox" type="checkbox" />
-                <span>Show temperature metric</span>
-              </label>
-              <label class="checkbox-group" for="overlaySpeedGaugeCheckbox">
-                <input id="overlaySpeedGaugeCheckbox" type="checkbox" />
-                <span>Show speed gauge (dial)</span>
-              </label>
-              <!-- F-74: independent text speed overlay -->
-              <label class="checkbox-group" for="overlaySpeedTextCheckbox">
-                <input id="overlaySpeedTextCheckbox" type="checkbox" />
-                <span>Show speed (text)</span>
-              </label>
-              <!-- end F-74 -->
-              <label class="checkbox-group" for="overlayHeartRateGaugeCheckbox">
-                <input id="overlayHeartRateGaugeCheckbox" type="checkbox" />
-                <span>Show heart rate gauge</span>
-              </label>
-              <!-- F-66: map inset toggle -->
-              <label class="checkbox-group" for="overlayMapInsetCheckbox">
-                <input id="overlayMapInsetCheckbox" type="checkbox" />
-                <span>Show map inset</span>
-              </label>
-              <!-- end F-66 -->
-              <label class="field-group" for="overlaySpeedGaugeMaxInput">
-                <span class="field-label">Speedometer max speed (km/h)</span>
-                <input id="overlaySpeedGaugeMaxInput" type="number" />
-              </label>
-            </div>
-            <p class="helper-text">
-              Preview and exported video use the same overlay visibility choices.
-            </p>
+            <details id="sectionDetailsOverlay" class="section-details">
+              <summary class="section-summary"><h2>Overlays</h2></summary>
+              <div class="field-stack">
+                <label class="checkbox-group" for="overlayTimeMetricCheckbox">
+                  <input id="overlayTimeMetricCheckbox" type="checkbox" />
+                  <span>Show time metric</span>
+                </label>
+                <label class="checkbox-group" for="overlayDistanceMetricCheckbox">
+                  <input id="overlayDistanceMetricCheckbox" type="checkbox" />
+                  <span>Show distance metric</span>
+                </label>
+                <label class="checkbox-group" for="overlayAltitudeMetricCheckbox">
+                  <input id="overlayAltitudeMetricCheckbox" type="checkbox" />
+                  <span>Show altitude metric</span>
+                </label>
+                <label class="checkbox-group" for="overlayCadenceMetricCheckbox">
+                  <input id="overlayCadenceMetricCheckbox" type="checkbox" />
+                  <span>Show cadence metric</span>
+                </label>
+                <label class="checkbox-group" for="overlayTemperatureMetricCheckbox">
+                  <input id="overlayTemperatureMetricCheckbox" type="checkbox" />
+                  <span>Show temperature metric</span>
+                </label>
+                <label class="checkbox-group" for="overlaySpeedGaugeCheckbox">
+                  <input id="overlaySpeedGaugeCheckbox" type="checkbox" />
+                  <span>Show speed gauge (dial)</span>
+                </label>
+                <!-- F-74: independent text speed overlay -->
+                <label class="checkbox-group" for="overlaySpeedTextCheckbox">
+                  <input id="overlaySpeedTextCheckbox" type="checkbox" />
+                  <span>Show speed (text)</span>
+                </label>
+                <!-- end F-74 -->
+                <label class="checkbox-group" for="overlayHeartRateGaugeCheckbox">
+                  <input id="overlayHeartRateGaugeCheckbox" type="checkbox" />
+                  <span>Show heart rate gauge</span>
+                </label>
+                <!-- F-66: map inset toggle -->
+                <label class="checkbox-group" for="overlayMapInsetCheckbox">
+                  <input id="overlayMapInsetCheckbox" type="checkbox" />
+                  <span>Show map inset</span>
+                </label>
+                <!-- end F-66 -->
+                <label class="field-group" for="overlaySpeedGaugeMaxInput">
+                  <span class="field-label">Speedometer max speed (km/h)</span>
+                  <input id="overlaySpeedGaugeMaxInput" type="number" />
+                </label>
+              </div>
+              <p class="helper-text">
+                Preview and exported video use the same overlay visibility choices.
+              </p>
+            </details>
           </section>
+          <!-- end F-38 -->
+          <!-- F-38: collapsible Media library section (closed by default; auto-opens during import) -->
           <section class="controls-panel" aria-label="Media library">
-            <h2>Media library</h2>
-            <div class="button-row">
-              <button id="importMediaButton" type="button">Import media</button>
-            </div>
-            <div class="progress-block">
-              <div class="progress-header">
-                <span id="mediaImportProgressLabel" class="progress-label">Idle</span>
-                <span id="mediaImportProgressValue" class="progress-value">0%</span>
+            <details id="sectionDetailsMedia" class="section-details">
+              <summary class="section-summary"><h2>Media library</h2></summary>
+              <div class="button-row">
+                <button id="importMediaButton" type="button">Import media</button>
               </div>
-              <progress
-                id="mediaImportProgressBar"
-                class="progress-bar"
-                max="100"
-                value="0"
-              ></progress>
-            </div>
-            <dl class="summary-list summary-list--compact">
-              <div>
-                <dt>Items</dt>
-                <dd id="mediaLibraryCount">0 imported</dd>
+              <div class="progress-block">
+                <div class="progress-header">
+                  <span id="mediaImportProgressLabel" class="progress-label">Idle</span>
+                  <span id="mediaImportProgressValue" class="progress-value">0%</span>
+                </div>
+                <progress
+                  id="mediaImportProgressBar"
+                  class="progress-bar"
+                  max="100"
+                  value="0"
+                ></progress>
               </div>
-              <div>
-                <dt>Status</dt>
-                <dd id="mediaLibraryStatus">No media imported yet.</dd>
+              <dl class="summary-list summary-list--compact">
+                <div>
+                  <dt>Items</dt>
+                  <dd id="mediaLibraryCount">0 imported</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd id="mediaLibraryStatus">No media imported yet.</dd>
+                </div>
+                <div>
+                  <dt>Correction model</dt>
+                  <dd id="mediaOffsetSummary">Per-media correction only until camera metadata is available.</dd>
+                </div>
+              </dl>
+              <div class="field-stack media-settings-stack">
+                <div id="mediaCameraOffsetList" class="field-stack" aria-live="polite"></div>
+                <label class="field-group" for="photoDisplayDurationInput">
+                  <span class="field-label">Photo export hold</span>
+                  <input id="photoDisplayDurationInput" type="number" />
+                </label>
+                <label class="checkbox-group" for="photoKenBurnsCheckbox">
+                  <input id="photoKenBurnsCheckbox" type="checkbox" />
+                  <span>Enable subtle Ken Burns effect on exported photos</span>
+                </label>
+                <label class="field-group" for="mediaAnimationEffectSelect">
+                  <span class="field-label">Transition effect</span>
+                  <select id="mediaAnimationEffectSelect">
+                    <option value="slide-up">Slide up (default)</option>
+                    <option value="fade">Fade only</option>
+                    <option value="slide-down">Slide down</option>
+                    <option value="slide-left">Slide from right</option>
+                    <option value="zoom">Zoom</option>
+                    <option value="none">None (fade only)</option>
+                  </select>
+                </label>
+                <label class="checkbox-group" for="photoAllowCropCheckbox">
+                  <input id="photoAllowCropCheckbox" type="checkbox" />
+                  <span>Allow crop (fill frame; default is letterbox/pillarbox)</span>
+                </label>
               </div>
-              <div>
-                <dt>Correction model</dt>
-                <dd id="mediaOffsetSummary">Per-media correction only until camera metadata is available.</dd>
-              </div>
-            </dl>
-            <div class="field-stack media-settings-stack">
-              <div id="mediaCameraOffsetList" class="field-stack" aria-live="polite"></div>
-              <label class="field-group" for="photoDisplayDurationInput">
-                <span class="field-label">Photo export hold</span>
-                <input id="photoDisplayDurationInput" type="number" />
-              </label>
-              <label class="checkbox-group" for="photoKenBurnsCheckbox">
-                <input id="photoKenBurnsCheckbox" type="checkbox" />
-                <span>Enable subtle Ken Burns effect on exported photos</span>
-              </label>
-              <label class="field-group" for="mediaAnimationEffectSelect">
-                <span class="field-label">Transition effect</span>
-                <select id="mediaAnimationEffectSelect">
-                  <option value="slide-up">Slide up (default)</option>
-                  <option value="fade">Fade only</option>
-                  <option value="slide-down">Slide down</option>
-                  <option value="slide-left">Slide from right</option>
-                  <option value="zoom">Zoom</option>
-                  <option value="none">None (fade only)</option>
-                </select>
-              </label>
-              <label class="checkbox-group" for="photoAllowCropCheckbox">
-                <input id="photoAllowCropCheckbox" type="checkbox" />
-                <span>Allow crop (fill frame; default is letterbox/pillarbox)</span>
-              </label>
-            </div>
-            <p class="helper-text">
-              Known cameras can share one offset; each media item can also override its own timing. Unidentified files support per-media correction only.
-            </p>
-            <ul id="mediaLibraryList" class="media-library-list" aria-live="polite">
-              <li class="media-library-empty">Imported photos and videos will appear here.</li>
-            </ul>
+              <p class="helper-text">
+                Known cameras can share one offset; each media item can also override its own timing. Unidentified files support per-media correction only.
+              </p>
+              <ul id="mediaLibraryList" class="media-library-list" aria-live="polite">
+                <li class="media-library-empty">Imported photos and videos will appear here.</li>
+              </ul>
+            </details>
           </section>
+          <!-- end F-38 -->
+          <!-- F-38: collapsible Export section (open by default; auto-opens during export) -->
           <section class="controls-panel" aria-label="Export controls">
-            <h2>Export MP4</h2>
-            <div class="field-stack">
-              <label class="field-group">
-                <span class="field-label">Resolution</span>
-                <select id="exportResolutionSelect"></select>
-              </label>
-              <label class="field-group">
-                <span class="field-label">Timing mode</span>
-                <select id="exportTimingModeSelect"></select>
-              </label>
-              <label class="field-group">
-                <span class="field-label">FPS</span>
-                <input id="exportFpsInput" type="number" />
-              </label>
-              <label id="exportSpeedGroup" class="field-group">
-                <span id="exportSpeedLabel" class="field-label">Base speed multiplier</span>
-                <input id="exportSpeedInput" type="number" />
-              </label>
-              <label id="exportAdaptiveStrengthGroup" class="field-group">
-                <span class="field-label">Adaptive strength</span>
-                <input id="exportAdaptiveStrengthInput" type="number" />
-              </label>
-              <!-- F-29: target duration input, shown only when timing mode is target-duration -->
-              <label id="exportTargetDurationGroup" class="field-group">
-                <span class="field-label">Target duration (seconds)</span>
-                <input id="exportTargetDurationInput" type="number" min="1" step="1" />
-              </label>
-              <!-- end F-29 -->
-              <label class="field-group">
-                <span class="field-label">Camera mode</span>
-                <select id="exportCameraModeSelect"></select>
-              </label>
-            </div>
-            <p id="exportTimingModeSummary" class="helper-text">
-              Compresses idle sections more aggressively and slows down fast movement to keep it readable.
-            </p>
-            <div class="button-row">
-              <button id="startExportButton" type="button">Export MP4</button>
-              <button id="cancelExportButton" type="button" disabled>Cancel</button>
-            </div>
-            <div class="progress-block">
-              <div class="progress-header">
-                <span id="exportProgressLabel" class="progress-label">Idle</span>
-                <span id="exportProgressValue" class="progress-value">0%</span>
+            <details id="sectionDetailsExport" class="section-details" open>
+              <summary class="section-summary"><h2>Export MP4</h2></summary>
+              <div class="field-stack">
+                <label class="field-group">
+                  <span class="field-label">Resolution</span>
+                  <select id="exportResolutionSelect"></select>
+                </label>
+                <label class="field-group">
+                  <span class="field-label">Timing mode</span>
+                  <select id="exportTimingModeSelect"></select>
+                </label>
+                <label class="field-group">
+                  <span class="field-label">FPS</span>
+                  <input id="exportFpsInput" type="number" />
+                </label>
+                <label id="exportSpeedGroup" class="field-group">
+                  <span id="exportSpeedLabel" class="field-label">Base speed multiplier</span>
+                  <input id="exportSpeedInput" type="number" />
+                </label>
+                <label id="exportAdaptiveStrengthGroup" class="field-group">
+                  <span class="field-label">Adaptive strength</span>
+                  <input id="exportAdaptiveStrengthInput" type="number" />
+                </label>
+                <!-- F-29: target duration input, shown only when timing mode is target-duration -->
+                <label id="exportTargetDurationGroup" class="field-group">
+                  <span class="field-label">Target duration (seconds)</span>
+                  <input id="exportTargetDurationInput" type="number" min="1" step="1" />
+                </label>
+                <!-- end F-29 -->
+                <label class="field-group">
+                  <span class="field-label">Camera mode</span>
+                  <select id="exportCameraModeSelect"></select>
+                </label>
               </div>
-              <progress
-                id="exportProgressBar"
-                class="progress-bar"
-                max="100"
-                value="0"
-              ></progress>
-            </div>
-            <dl class="summary-list summary-list--compact">
-              <div>
-                <dt>Status</dt>
-                <dd id="exportStatus">Idle</dd>
+              <p id="exportTimingModeSummary" class="helper-text">
+                Compresses idle sections more aggressively and slows down fast movement to keep it readable.
+              </p>
+              <div class="button-row">
+                <button id="startExportButton" type="button">Export MP4</button>
+                <button id="cancelExportButton" type="button" disabled>Cancel</button>
               </div>
-              <div>
-                <dt>Phase</dt>
-                <dd id="exportPhase">-</dd>
+              <div class="progress-block">
+                <div class="progress-header">
+                  <span id="exportProgressLabel" class="progress-label">Idle</span>
+                  <span id="exportProgressValue" class="progress-value">0%</span>
+                </div>
+                <progress
+                  id="exportProgressBar"
+                  class="progress-bar"
+                  max="100"
+                  value="0"
+                ></progress>
               </div>
-              <div>
-                <dt>Frames</dt>
-                <dd id="exportProgress">-</dd>
-              </div>
-            </dl>
-            <p id="exportMessage" class="helper-text">
-              Encodes with the bundled ffmpeg binary.
-            </p>
+              <dl class="summary-list summary-list--compact">
+                <div>
+                  <dt>Status</dt>
+                  <dd id="exportStatus">Idle</dd>
+                </div>
+                <div>
+                  <dt>Phase</dt>
+                  <dd id="exportPhase">-</dd>
+                </div>
+                <div>
+                  <dt>Frames</dt>
+                  <dd id="exportProgress">-</dd>
+                </div>
+              </dl>
+              <p id="exportMessage" class="helper-text">
+                Encodes with the bundled ffmpeg binary.
+              </p>
+            </details>
           </section>
+          <!-- end F-38 -->
         </aside>
         <section class="viewer-panel" aria-label="Cesium viewer">
           <div id="cesiumContainer" class="viewer-canvas"></div>

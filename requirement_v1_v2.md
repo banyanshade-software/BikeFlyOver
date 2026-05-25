@@ -63,7 +63,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-35 |v3  | Project | Detect missing files when reopening a project and offer relinking | Required for a usable desktop workflow | Not implemented |
 | F-36 |v1  | GUI enhancement | Keep the control panel scrollable on all supported window sizes and long forms | Already partly present; should be preserved and hardened | Implemented |
 | F-37 |v2  | GUI enhancement | Add a resizable split layout between control panel and viewer | Improves usability on large and small screens | Not implemented |
-| F-38 |v2  | GUI enhancement | Add collapsible control sections (Import, Timeline, Camera, Overlay, Export) | Reduces clutter as features grow | Not implemented |
+| F-38 |v2  | GUI enhancement | Add collapsible control sections (Import, Timeline, Camera, Overlay, Export) | Reduces clutter as features grow | Implemented |
 | F-39 |v2  | GUI enhancement | Add sticky playback/export status area while scrolling the control panel | Keeps critical controls visible | Not implemented |
 | F-40 |v3  | GUI enhancement | Add a richer empty state and onboarding hints for first import | Improves usability for new users | Not implemented |
 | F-41 |v3  | GUI enhancement | Improve responsive layout for narrow widths and portrait screens | Required by the spec | Partial |

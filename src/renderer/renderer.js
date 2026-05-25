@@ -189,6 +189,16 @@ function setElementHidden(elementId, hidden) {
   }
 }
 
+// F-38: open a collapsible section by its <details> element ID so critical status is
+// never silently hidden when an operation starts while the section is collapsed.
+function openSectionDetails(sectionDetailsId) {
+  const details = document.getElementById(sectionDetailsId);
+  if (details instanceof HTMLDetailsElement) {
+    details.open = true;
+  }
+}
+// end F-38
+
 function normalizeOverlayVisibilityState(rawVisibility = {}) {
   return OVERLAY_COMPONENT_DEFINITIONS.reduce((visibility, component) => {
     const fallback =
@@ -4366,6 +4376,9 @@ function setupMediaLibraryControls(viewer, playbackState) {
 
   importMediaButton?.addEventListener("click", async () => {
     mediaLibraryState.isImporting = true;
+    // F-38: auto-open the media section so import progress is visible even if collapsed.
+    openSectionDetails("sectionDetailsMedia");
+    // end F-38
     mediaLibraryState.progress = {
       indeterminate: true,
       label: "Selecting media files",
@@ -4452,6 +4465,11 @@ function updateExportUi(statusUpdate) {
   exportUiState.isExporting = ["starting", "running", "encoding"].includes(
     statusUpdate.status,
   );
+  // F-38: auto-open the export section so progress is visible even if the user had collapsed it.
+  if (exportUiState.isExporting) {
+    openSectionDetails("sectionDetailsExport");
+  }
+  // end F-38
   setElementDisabled("startExportButton", exportUiState.isExporting);
   setElementDisabled("cancelExportButton", !exportUiState.isExporting);
   setElementDisabled("exportResolutionSelect", exportUiState.isExporting);

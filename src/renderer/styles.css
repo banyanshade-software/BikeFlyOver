@@ -97,6 +97,63 @@ body {
   border-top: 1px solid rgba(121, 189, 255, 0.18);
 }
 
+/* F-38: collapsible section disclosure — native details/summary styled to match the dark theme */
+.section-details {
+  /* no extra box model; inherits from controls-panel */
+}
+
+.section-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  list-style: none; /* hide default marker in Firefox */
+  cursor: pointer;
+  user-select: none;
+  margin-bottom: 1rem;
+  gap: 0.5rem;
+  border-radius: 0.4rem;
+}
+
+/* hide the native disclosure triangle in WebKit/Blink */
+.section-summary::-webkit-details-marker {
+  display: none;
+}
+
+.section-summary h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  flex: 1;
+}
+
+/* chevron indicator via ::after; rotates when open */
+.section-summary::after {
+  content: "";
+  flex-shrink: 0;
+  width: 0.6rem;
+  height: 0.6rem;
+  border-right: 2px solid #79bdff;
+  border-bottom: 2px solid #79bdff;
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+  margin-bottom: 0.15rem;
+}
+
+.section-details[open] > .section-summary::after {
+  transform: rotate(-135deg);
+  margin-bottom: -0.15rem;
+}
+
+.section-summary:focus-visible {
+  outline: 2px solid #79bdff;
+  outline-offset: 2px;
+}
+
+.section-summary:hover h2 {
+  color: #b8d8f6;
+}
+/* end F-38 */
+
 .button-row {
   display: flex;
   gap: 0.75rem;
