@@ -48,6 +48,10 @@ const mediaLibraryState = {
     value: 0,
   },
 };
+
+// F-01: file path of the user-imported activity; null means the app is using the bundled sample track.
+let currentActivityFilePath = null;
+// end F-01
 const TIMELINE_SLIDER_MAX = 1000;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
 const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze(
@@ -3073,10 +3077,12 @@ function buildPlayedRoutePositions(Cesium, playbackState) {
 function addPlaybackEntities(viewer, playbackState) {
   const Cesium = window.Cesium;
 
+  // Use a CallbackProperty so Cesium reads the current position live every render frame
+  // rather than relying on repeated entity.position reassignment, which can lag after reload.
   const markerEntity = viewer.entities.add({
     id: "current-position-marker",
     name: "Current position",
-    position: playbackState.currentSamplePosition,
+    position: new Cesium.CallbackProperty(() => playbackState.currentSamplePosition, false),
     point: {
       pixelSize: 16,
       color: Cesium.Color.fromCssColorString("#ffe56a"),
@@ -3106,10 +3112,9 @@ function addPlaybackEntities(viewer, playbackState) {
   playbackState.progressEntity = progressEntity;
 }
 
-function updateMarkerPosition(playbackState) {
-  if (playbackState.markerEntity && playbackState.currentSamplePosition) {
-    playbackState.markerEntity.position = playbackState.currentSamplePosition;
-  }
+function updateMarkerPosition(_playbackState) {
+  // Position is driven by the CallbackProperty set in addPlaybackEntities;
+  // interpolateTrackpoint keeps currentSamplePosition current, the callback reads it live.
 }
 
 function updatePlaybackUI(playbackState) {
@@ -4576,8 +4581,144 @@ function readExportSettings() {
     animationEffect: mediaPresentationSettings.animationEffect,
     imageFit: mediaPresentationSettings.imageFit,
     // end F-76
+    // F-01: pass the imported activity path so the main process exports the correct track.
+    activityFilePath: currentActivityFilePath ?? null,
+    // end F-01
   };
 }
+
+// F-01: update the Import section status row to show progress and file details.
+function updateImportActivityUi({ status, label, trackData } = {}) {
+  const progressEl = document.getElementById("activityImportProgressBar");
+  const labelEl = document.getElementById("activityImportProgressLabel");
+  const fileEl = document.getElementById("activityImportFile");
+  const pointsEl = document.getElementById("activityImportPoints");
+  const durationEl = document.getElementById("activityImportDuration");
+
+  if (progressEl) {
+    progressEl.value = status === "complete" ? 100 : status === "running" ? 50 : 0;
+    progressEl.dataset.status = status || "idle";
+  }
+  if (labelEl) {
+    labelEl.textContent =
+      label ?? (status === "complete" ? "Activity loaded" : "No activity loaded");
+  }
+
+  if (trackData) {
+    if (fileEl) fileEl.textContent = trackData.fileName ?? "-";
+    if (pointsEl) pointsEl.textContent = trackData.summary?.pointCount ?? "-";
+    if (durationEl) {
+      durationEl.textContent = formatDuration(
+        trackData.summary ? trackData.summary.durationSeconds * 1000 : 0,
+      );
+    }
+  }
+}
+
+// F-01: replace the active track in-place so all existing control closures keep working.
+// The playbackState object is mutated (not replaced) so closures from setup functions remain valid.
+function reloadTrack(viewer, playbackState, newTrackData) {
+  stopPlayback(playbackState);
+
+  // F-01: wipe ALL user entities from the viewer so nothing from the old track can persist.
+  // Media preview entity refs must be reset before removeAll so syncMediaPreviewEntities
+  // re-adds them from scratch rather than trying to remove stale references later.
+  mediaLibraryState.previewEntities = [];
+  viewer.entities.removeAll();
+  // end F-01
+
+  // Build new playback state, then copy all properties onto the existing object.
+  // Save terrain provider references before Object.assign resets the terrain sub-object —
+  // the new track should reuse the already-initialised provider rather than re-fetching it.
+  const oldTerrain = playbackState.terrain;
+  const newState = createPlaybackState(newTrackData.trackpoints, {
+    adaptiveStrength: playbackState.camera.adaptiveStrength,
+    speedMultiplier: playbackState.speedMultiplier,
+    cameraMode: playbackState.camera.mode,
+    cameraSettings: playbackState.camera.settings,
+    terrainSettings: playbackState.terrain.settings,
+    overlayVisibility: playbackState.ui.overlayVisibility,
+    speedGaugeMaxKph: playbackState.ui.speedGaugeMaxKph,
+  });
+  Object.assign(playbackState, newState);
+  // Restore terrain provider state so refreshTerrainRouteGeometry can actually sample heights.
+  playbackState.terrain.flatProvider = oldTerrain.flatProvider;
+  playbackState.terrain.provider = oldTerrain.provider;
+  playbackState.terrain.providerLabel = oldTerrain.providerLabel;
+  playbackState.terrain.providerReady = oldTerrain.providerReady;
+
+  const { routeBoundingSphere, routeEntity, routePositions } = addRouteEntities(
+    viewer,
+    playbackState,
+    newTrackData,
+  );
+  playbackState.currentSamplePosition = routePositions[0] || null;
+  playbackState.camera.routeBoundingSphere = routeBoundingSphere;
+  playbackState.camera.routeEntity = routeEntity;
+  addPlaybackEntities(viewer, playbackState);
+
+  window.sampleTrack = newTrackData;
+  window.sampleRouteEntity = routeEntity;
+
+  renderSummary(newTrackData);
+  setOverviewCamera(viewer, playbackState);
+  setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
+    deterministicCamera: false,
+    updateUi: true,
+  });
+  updatePlaybackUI(playbackState);
+  updateCameraUI(playbackState);
+  updateImportActivityUi({ status: "complete", trackData: newTrackData });
+
+  applyMediaAlignmentToLibrary(playbackState);
+  refreshMediaLibraryPresentation(viewer, playbackState);
+
+  // F-01: re-sample terrain heights for the new track if terrain is enabled, then
+  // update route polyline positions so they sit on the correct terrain surface.
+  void refreshTerrainRouteGeometry(viewer, playbackState, {
+    resampleHeights: true,
+    updateTimelineState: true,
+  });
+  // end F-01
+
+  startPlayback(viewer, playbackState);
+}
+
+// F-01: wire up the Import activity button and keep the import status display in sync.
+function setupImportActivityControls(viewer, playbackState) {
+  const importActivityButton = document.getElementById("importActivityButton");
+
+  importActivityButton?.addEventListener("click", async () => {
+    updateImportActivityUi({ status: "running", label: "Selecting file…" });
+    openSectionDetails("sectionDetailsImport");
+
+    try {
+      const result = await window.bikeFlyOverApp.importActivity();
+
+      if (result?.cancelled) {
+        updateImportActivityUi({
+          status: "idle",
+          label: currentActivityFilePath ? "Import cancelled" : "Sample activity",
+        });
+        return;
+      }
+
+      if (!result?.trackData?.trackpoints?.length) {
+        updateImportActivityUi({ status: "error", label: "No trackpoints found" });
+        return;
+      }
+
+      currentActivityFilePath = result.trackData.filePath;
+      reloadTrack(viewer, playbackState, result.trackData);
+    } catch (error) {
+      updateImportActivityUi({
+        status: "error",
+        label: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+// end F-01
 
 function setupExportControls() {
   const startExportButton = document.getElementById("startExportButton");
@@ -5064,12 +5205,16 @@ async function initializeApp() {
       updateMediaLibraryUi();
       void updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
+      setupImportActivityControls(viewer, playbackState);
       setupMediaLibraryControls(viewer, playbackState);
       setupPlaybackControls(viewer, playbackState);
       setupCameraSettingsControls(viewer, playbackState);
       setupTerrainControls(viewer, playbackState);
       setupOverlayControls(playbackState);
       setupExportControls();
+      // F-01: seed the import UI with the sample track that was loaded on startup.
+      updateImportActivityUi({ status: "complete", trackData: sampleTrack });
+      // end F-01
       startPlayback(viewer, playbackState);
       setRouteStatus(
         "Completed route is bright blue; upcoming route stays thin white.",

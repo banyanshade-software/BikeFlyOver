@@ -5,7 +5,7 @@ const { randomUUID } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const ffmpegPath = require("ffmpeg-static");
-const { loadSampleTrack } = require("../shared/sample-track");
+const { loadSampleTrack, loadActivityFile } = require("../shared/sample-track");
 const {
   detectMediaType,
   extractMediaTimestampMetadata,
@@ -265,6 +265,30 @@ async function normalizeImportedMediaPaths(filePaths) {
 
   return importedMedia.filter(Boolean);
 }
+
+// F-01: open a file picker for activity files so users can import their own track.
+async function importActivityFile() {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: "Import activity",
+    buttonLabel: "Import activity",
+    properties: ["openFile"],
+    filters: [
+      { name: "Activity files", extensions: ["tcx", "gpx", "fit"] },
+      { name: "TCX", extensions: ["tcx"] },
+      { name: "GPX", extensions: ["gpx"] },
+      { name: "FIT", extensions: ["fit"] },
+    ],
+  });
+
+  if (result.canceled) {
+    return { cancelled: true };
+  }
+
+  const filePath = result.filePaths[0];
+  const trackData = await loadActivityFile(filePath);
+  return { cancelled: false, trackData };
+}
+// end F-01
 
 async function importMediaFiles() {
   const result = await dialog.showOpenDialog(mainWindow, {
@@ -566,7 +590,11 @@ async function startExport(settings) {
     ...EXPORT_DEFAULTS,
     ...settings,
   });
-  const sampleTrack = await loadSampleTrack();
+  // F-01: use the user-imported activity file path if one was passed in settings; fall back to the sample track.
+  const sampleTrack = settings?.activityFilePath
+    ? await loadActivityFile(settings.activityFilePath)
+    : await loadSampleTrack();
+  // end F-01
   const outputPath = await promptForExportPath(sampleTrack);
 
   if (!outputPath) {
@@ -686,6 +714,12 @@ app.whenReady().then(() => {
   ipcMain.handle("media-import", async () => {
     return importMediaFiles();
   });
+
+  // F-01: handle activity file import requests from the renderer.
+  ipcMain.handle("activity-import", async () => {
+    return importActivityFile();
+  });
+  // end F-01
 
   ipcMain.handle("export-cancel", async () => {
     if (!activeExportSession) {

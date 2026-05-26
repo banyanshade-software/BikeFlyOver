@@ -89,6 +89,11 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
   importMedia() {
     return ipcRenderer.invoke("media-import");
   },
+  // F-01: open the file picker to import a user activity file (TCX, GPX, or FIT).
+  importActivity() {
+    return ipcRenderer.invoke("activity-import");
+  },
+  // end F-01
   toFileUrl(filePath) {
     return pathToFileURL(filePath).href;
   },
