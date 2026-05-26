@@ -378,6 +378,15 @@ function setNumericInputValue(elementId, value) {
   }
 }
 
+// F-33/F-34: set a <select> element to the given value when restoring project state.
+function setSelectValue(elementId, value) {
+  const element = document.getElementById(elementId);
+  if (element instanceof HTMLSelectElement && value != null) {
+    element.value = String(value);
+  }
+}
+// end F-33/F-34
+
 function applyNumericDefinitionToElement(element, definition, options = {}) {
   if (!(element instanceof HTMLInputElement) || !definition) {
     return;
@@ -4684,6 +4693,110 @@ function reloadTrack(viewer, playbackState, newTrackData) {
   startPlayback(viewer, playbackState);
 }
 
+// F-33: collect the complete serializable project state from the current renderer session.
+// The returned object can be passed directly to serializeProjectState (called by the main process).
+function collectProjectState(playbackState) {
+  const track = currentActivityFilePath
+    ? {
+        filePath: currentActivityFilePath,
+        fileName: window.sampleTrack?.fileName ?? null,
+        importFormat: null,
+      }
+    : null;
+
+  return {
+    track,
+    mediaItems: mediaLibraryState.items,
+    mediaAlignmentOffsets: mediaLibraryState.alignmentOffsets,
+    playback: {
+      currentTimestamp: playbackState.currentTimestamp,
+      isPlaying: false,
+      cameraMode: playbackState.camera.mode,
+      cameraSettings: playbackState.camera.settings,
+      terrainSettings: playbackState.terrain.settings,
+      overlayVisibility: playbackState.ui.overlayVisibility,
+      speedGaugeMaxKph: playbackState.ui.speedGaugeMaxKph,
+      speedGaugePeakKph: playbackState.ui.speedGaugePeakKph,
+      speedGaugePeakTimestamp: playbackState.ui.speedGaugePeakTimestamp,
+      speedMultiplier: playbackState.speedMultiplier,
+      adaptiveStrength: playbackState.camera.adaptiveStrength,
+    },
+    exportSettings: readExportSettings(),
+  };
+}
+// end F-33
+
+// F-33/F-34: update the project save/load progress row in the Import section.
+function updateProjectUi({ status, label } = {}) {
+  const progressEl = document.getElementById("projectProgressBar");
+  const labelEl = document.getElementById("projectProgressLabel");
+  if (progressEl) {
+    progressEl.value = status === "complete" ? 100 : status === "running" ? 50 : 0;
+    progressEl.dataset.status = status || "idle";
+  }
+  if (labelEl) labelEl.textContent = label ?? "";
+}
+// end F-33/F-34
+
+// F-34: apply a loaded project result to the live renderer session.
+// Called after the main process re-imports the track and media files.
+function restoreProjectState(viewer, playbackState, loadResult) {
+  const { projectState, trackData, reimportedMediaItems } = loadResult;
+
+  if (trackData) {
+    // Reload track first — this resets playbackState via reloadTrack.
+    currentActivityFilePath = trackData.filePath;
+    reloadTrack(viewer, playbackState, trackData);
+  }
+
+  // Restore media library items: use re-imported metadata (fresh EXIF/previewUrl)
+  // but patch back the saved alignment timestamps so timeline placement is preserved.
+  const savedMediaByPath = new Map(
+    projectState.mediaItems.map((item) => [item.filePath, item]),
+  );
+  const restoredItems = (reimportedMediaItems || []).map((item) => {
+    const saved = savedMediaByPath.get(item.filePath);
+    if (!saved) return item;
+    return {
+      ...item,
+      alignedActivityTimestamp: saved.alignedActivityTimestamp,
+      alignmentStatus: saved.alignmentStatus,
+    };
+  });
+  mediaLibraryState.items = restoredItems;
+  mediaLibraryState.alignmentOffsets = normalizeMediaAlignmentOffsets(
+    projectState.mediaAlignmentOffsets,
+  );
+
+  // Apply saved playback/camera/terrain/overlay settings.
+  applyRendererSettings(viewer, playbackState, projectState.playback, {
+    resetCameraSmoothing: true,
+    syncControls: true,
+  });
+
+  // Restore export UI inputs (speed multiplier, adaptive strength, FPS, etc.).
+  const es = projectState.exportSettings;
+  if (es) {
+    setNumericInputValue("exportSpeedInput", es.speedMultiplier);
+    setNumericInputValue("exportAdaptiveStrengthInput", es.adaptiveStrength);
+    setNumericInputValue("exportFpsInput", es.fps);
+    setSelectValue("exportResolutionSelect", es.resolutionId);
+    setSelectValue("exportTimingModeSelect", es.timingMode);
+    setSelectValue("exportCameraModeSelect", es.cameraMode);
+  }
+
+  // Re-apply alignment and refresh the media library presentation.
+  applyMediaAlignmentToLibrary(playbackState, mediaLibraryState.items);
+  refreshMediaLibraryPresentation(viewer, playbackState);
+
+  // Seek to the saved playback position.
+  setPlaybackTimestamp(viewer, playbackState, projectState.playback.currentTimestamp, {
+    deterministicCamera: false,
+    updateUi: true,
+  });
+}
+// end F-34
+
 // F-01: wire up the Import activity button and keep the import status display in sync.
 function setupImportActivityControls(viewer, playbackState) {
   const importActivityButton = document.getElementById("importActivityButton");
@@ -4717,6 +4830,62 @@ function setupImportActivityControls(viewer, playbackState) {
       });
     }
   });
+
+  // F-33: save project — collect state, hand off to main process to write the .bfov file.
+  const saveProjectButton = document.getElementById("saveProjectButton");
+  saveProjectButton?.addEventListener("click", async () => {
+    updateProjectUi({ status: "running", label: "Saving…" });
+    openSectionDetails("sectionDetailsImport");
+    try {
+      const result = await window.bikeFlyOverApp.saveProject(
+        collectProjectState(playbackState),
+      );
+      updateProjectUi({
+        status: result?.cancelled ? "idle" : "complete",
+        label: result?.cancelled
+          ? "Save cancelled"
+          : result?.filePath
+            ? `Saved: ${result.filePath.split(/[\\/]/).pop()}`
+            : "Saved",
+      });
+    } catch (error) {
+      updateProjectUi({
+        status: "error",
+        label: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+  // end F-33
+
+  // F-34: load project — open file picker, let main process re-import assets, restore state.
+  const loadProjectButton = document.getElementById("loadProjectButton");
+  loadProjectButton?.addEventListener("click", async () => {
+    updateProjectUi({ status: "running", label: "Loading…" });
+    openSectionDetails("sectionDetailsImport");
+    try {
+      const result = await window.bikeFlyOverApp.loadProject();
+      if (result?.cancelled) {
+        updateProjectUi({ status: "idle", label: "Load cancelled" });
+        return;
+      }
+      if (!result?.projectState) {
+        updateProjectUi({ status: "error", label: "Invalid project file" });
+        return;
+      }
+      if (!result.trackData) {
+        updateProjectUi({ status: "error", label: "Activity file not found — project loaded without track" });
+      } else {
+        updateProjectUi({ status: "complete", label: "Project loaded" });
+      }
+      restoreProjectState(viewer, playbackState, result);
+    } catch (error) {
+      updateProjectUi({
+        status: "error",
+        label: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+  // end F-34
 }
 // end F-01
 

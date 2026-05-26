@@ -1,5 +1,8 @@
 const path = require("node:path");
 const { EXPORT_DEFAULTS, normalizeExportSettings } = require("./export");
+// F-33: import alignment-offset normalizer so project files preserve camera/media drift corrections.
+const { normalizeMediaAlignmentOffsets } = require("./media-alignment");
+// end F-33
 
 const PROJECT_STATE_SCHEMA_VERSION = 1;
 
@@ -101,6 +104,9 @@ function normalizePlaybackSnapshot(rawPlayback = {}) {
 function normalizeProjectState(rawProject = {}) {
   return {
     exportSettings: normalizeExportSettings(rawProject.exportSettings),
+    // F-33: persist camera/media time-drift corrections so they survive a save/load cycle.
+    mediaAlignmentOffsets: normalizeMediaAlignmentOffsets(rawProject.mediaAlignmentOffsets),
+    // end F-33
     mediaItems: Array.isArray(rawProject.mediaItems)
       ? rawProject.mediaItems
           .map((item) => normalizePersistedMediaItem(item))

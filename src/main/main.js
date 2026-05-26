@@ -10,6 +10,12 @@ const {
   detectMediaType,
   extractMediaTimestampMetadata,
 } = require("../shared/media-metadata");
+// F-33/F-34: import project serialization helpers for save and load IPC handlers.
+const {
+  deserializeProjectState,
+  serializeProjectState,
+} = require("../shared/project-state");
+// end F-33/F-34
 
 const {
   EXPORT_DEFAULTS,
@@ -720,6 +726,56 @@ app.whenReady().then(() => {
     return importActivityFile();
   });
   // end F-01
+
+  // F-33: save project state to a user-chosen .bfov file.
+  ipcMain.handle("project-save", async (_event, rawState) => {
+    const serialized = serializeProjectState(rawState);
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: "Save project",
+      defaultPath: "project.bfov",
+      filters: [{ name: "BikeFlyOver project", extensions: ["bfov"] }],
+    });
+    if (result.canceled) {
+      return { cancelled: true, filePath: null };
+    }
+    await fs.writeFile(result.filePath, serialized, "utf-8");
+    return { cancelled: false, filePath: result.filePath };
+  });
+  // end F-33
+
+  // F-34: load a previously saved .bfov project file and re-import the referenced assets.
+  ipcMain.handle("project-load", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Open project",
+      filters: [{ name: "BikeFlyOver project", extensions: ["bfov"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled) {
+      return { cancelled: true };
+    }
+
+    const raw = await fs.readFile(result.filePaths[0], "utf-8");
+    const projectState = deserializeProjectState(raw);
+
+    // Re-import track from disk so trackpoints are always freshly parsed.
+    let trackData = null;
+    if (projectState.track?.filePath) {
+      try {
+        trackData = await loadActivityFile(projectState.track.filePath);
+      } catch {
+        // File may have moved; caller displays an error via trackData === null.
+      }
+    }
+
+    // Re-import media to regenerate previewUrls and re-read EXIF metadata.
+    const mediaFilePaths = projectState.mediaItems
+      .map((item) => item.filePath)
+      .filter(Boolean);
+    const reimportedMediaItems = await normalizeImportedMediaPaths(mediaFilePaths);
+
+    return { cancelled: false, projectState, trackData, reimportedMediaItems };
+  });
+  // end F-34
 
   ipcMain.handle("export-cancel", async () => {
     if (!activeExportSession) {

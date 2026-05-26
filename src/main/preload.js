@@ -94,6 +94,16 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
     return ipcRenderer.invoke("activity-import");
   },
   // end F-01
+  // F-33: serialize and write the current project state to a user-chosen .bfov file.
+  saveProject(rawState) {
+    return ipcRenderer.invoke("project-save", rawState);
+  },
+  // end F-33
+  // F-34: open a .bfov project file and return the parsed state with re-imported assets.
+  loadProject() {
+    return ipcRenderer.invoke("project-load");
+  },
+  // end F-34
   toFileUrl(filePath) {
     return pathToFileURL(filePath).href;
   },

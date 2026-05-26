@@ -24,7 +24,7 @@ These capabilities already exist in the current proof of concept and should be t
 | --- | --- | --- | --- | --- | --- |
 | F-01 |v3  | Import | Import user-selected TCX files from file picker | Required by the spec for real user activity input | Implemented |
 | F-167 |v3  | Import | Import GPX files | implicit requirement | implemented |
-| F-02 |v3  | Import | Import FIT files | FIT is explicitly required by the spec | Not implemented |
+| F-02 |v3  | Import | Import FIT files | FIT is explicitly required by the spec | Implemented |
 | F-03 |v3  | Import | Support drag-and-drop import for traces, photos, and videos | Required by the spec and improves workflow speed | Not implemented |
 | F-04 |v3  | Import | Support menu-driven import commands | Required by the spec for discoverability and desktop UX | Not implemented |
 | F-05 |v4  | Import | Join several TCX/FIT files into one project timeline | Required for multi-segment activities | Not implemented |
@@ -58,8 +58,8 @@ These capabilities already exist in the current proof of concept and should be t
 | F-30 |v2  | Export | Add export summary dialog with output path, estimated frame count, and warnings | Improves usability and reduces accidental long exports | implemented |
 | F-31 |v3  | Export | Preserve debug frame sequence on failure and expose it clearly in the UI | Useful for troubleshooting failed exports | Partial |
 | F-32 |v3  | Export | Add resumable / restartable export workflow for failed long renders | Important for long projects | Not implemented |
-| F-33 |v3  | Project | Save project locally with references to imported traces, media, timeline edits, camera setup, and export settings | Required by the spec | Not implemented |
-| F-34 |v3  | Project | Load previously saved projects | Required by the spec | Not implemented |
+| F-33 |v3  | Project | Save project locally with references to imported traces, media, timeline edits, camera setup, and export settings | Required by the spec | Implemented |
+| F-34 |v3  | Project | Load previously saved projects | Required by the spec | Implemented |
 | F-35 |v3  | Project | Detect missing files when reopening a project and offer relinking | Required for a usable desktop workflow | Not implemented |
 | F-36 |v1  | GUI enhancement | Keep the control panel scrollable on all supported window sizes and long forms | Already partly present; should be preserved and hardened | Implemented |
 | F-37 |v2  | GUI enhancement | Add a resizable split layout between control panel and viewer | Improves usability on large and small screens | Not implemented |

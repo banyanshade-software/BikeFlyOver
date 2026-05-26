@@ -86,3 +86,39 @@ test("project state survives JSON round-trips and invalid JSON fails loudly", ()
     /Project file is not valid JSON\./,
   );
 });
+
+// F-33: verify that camera and media alignment offsets survive a full JSON roundtrip.
+test("normalizeProjectState preserves mediaAlignmentOffsets through JSON roundtrip", () => {
+  const roundTripped = deserializeProjectState(
+    serializeProjectState({
+      mediaAlignmentOffsets: {
+        cameraOffsetsByCameraId: { "cam-A": 5.5, "cam-B": -1.25 },
+        mediaOffsetsByMediaId: { "item-1": 2.0 },
+      },
+    }),
+  );
+
+  assert.deepEqual(roundTripped.mediaAlignmentOffsets, {
+    cameraOffsetsByCameraId: { "cam-A": 5.5, "cam-B": -1.25 },
+    mediaOffsetsByMediaId: { "item-1": 2.0 },
+  });
+});
+
+test("normalizeProjectState clamps non-finite values in mediaAlignmentOffsets to the default (0)", () => {
+  const normalized = normalizeProjectState({
+    mediaAlignmentOffsets: {
+      cameraOffsetsByCameraId: { "cam-ok": 3.0, "cam-bad": NaN },
+      mediaOffsetsByMediaId: { "item-ok": -1.0, "item-inf": Infinity },
+    },
+  });
+
+  assert.deepEqual(normalized.mediaAlignmentOffsets.cameraOffsetsByCameraId, {
+    "cam-ok": 3.0,
+    "cam-bad": 0,     // NaN → default (0)
+  });
+  assert.deepEqual(normalized.mediaAlignmentOffsets.mediaOffsetsByMediaId, {
+    "item-ok": -1.0,
+    "item-inf": 0,      // Infinity is non-finite → clamped to default (0)
+  });
+});
+// end F-33
