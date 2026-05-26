@@ -3,6 +3,9 @@ const { EXPORT_DEFAULTS, normalizeExportSettings } = require("./export");
 // F-33: import alignment-offset normalizer so project files preserve camera/media drift corrections.
 const { normalizeMediaAlignmentOffsets } = require("./media-alignment");
 // end F-33
+// F-15: import camera-move normaliser so predefined moves are persisted with the project.
+const { normalizeCameraMoves } = require("./camera-moves");
+// end F-15
 
 const PROJECT_STATE_SCHEMA_VERSION = 1;
 
@@ -103,6 +106,9 @@ function normalizePlaybackSnapshot(rawPlayback = {}) {
 
 function normalizeProjectState(rawProject = {}) {
   return {
+    // F-15: persist predefined camera moves so they survive a save/load cycle.
+    cameraMoves: normalizeCameraMoves(rawProject.cameraMoves),
+    // end F-15
     exportSettings: normalizeExportSettings(rawProject.exportSettings),
     // F-33: persist camera/media time-drift corrections so they survive a save/load cycle.
     mediaAlignmentOffsets: normalizeMediaAlignmentOffsets(rawProject.mediaAlignmentOffsets),

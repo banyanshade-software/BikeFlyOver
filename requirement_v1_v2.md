@@ -37,7 +37,7 @@ These capabilities already exist in the current proof of concept and should be t
 | F-12 |v3  | Timeline | Add playback loop/range preview for selected sections | Useful for editing and export iteration | Not implemented |
 | F-13 | v4 | Camera | Add first-person camera mode | Required by the spec | Not implemented |
 | F-14 | v2 | Camera | Add editable camera altitude / distance / pitch / motion parameters | Required by the GUI spec | Implemented |
-| F-15 |v3  | Camera | Add predefined camera moves at selected points (orbit, rotate around point, cinematic transition) | Required by the application overview | Not implemented |
+| F-15 |v3  | Camera | Add predefined camera moves at selected points (orbit, rotate around point, cinematic transition) | Required by the application overview | Implemented |
 | F-16 |v3  | Camera | Add keyframe-based camera authoring on the route timeline | Enables repeatable custom fly-over behavior | Not implemented |
 | F-17 |v3  | Camera | Stabilize and refine follow-camera behavior for long tracks and sharp turns | Mentioned as a risk and improves export quality | Partial |
 | F-69 | v2 | Terrain | Render the fly-over on optional real 3D terrain with configurable vertical exaggeration | Makes mountains and valleys visible while keeping the route visually attached to the ground when terrain is enabled | Implemented |

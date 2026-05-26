@@ -292,6 +292,69 @@
             </details>
           </section>
           <!-- end F-38 -->
+          <!-- F-15: collapsible Camera Moves section -->
+          <section class="controls-panel" aria-label="Camera moves controls">
+            <details id="sectionDetailsCameraMoves" class="section-details">
+              <summary class="section-summary"><h2>Camera Moves</h2></summary>
+              <div class="field-stack">
+                <p class="helper-text">Add a predefined camera move at the current playback position. The move overrides the normal camera for its duration during preview and export.</p>
+                <div class="field-row">
+                  <label for="cameraMoveTypeSelect">Type</label>
+                  <select id="cameraMoveTypeSelect">
+                    <option value="orbit">Orbit (revolve around position)</option>
+                    <option value="lookAt">Look-at (rotating panorama)</option>
+                    <option value="cinematic">Cinematic sweep</option>
+                  </select>
+                </div>
+                <div class="field-row">
+                  <label for="cameraMoveDurationInput">Duration (s)</label>
+                  <input id="cameraMoveDurationInput" type="number" min="1" max="60" step="1" value="6" />
+                </div>
+                <!-- orbit-specific params -->
+                <div id="cameraMoveOrbitParams" class="field-stack">
+                  <div class="field-row">
+                    <label for="cameraMoveOrbitRadiusInput">Orbit radius (m)</label>
+                    <input id="cameraMoveOrbitRadiusInput" type="number" min="20" max="2000" step="10" value="150" />
+                  </div>
+                  <div class="field-row">
+                    <label for="cameraMoveOrbitAltInput">Altitude offset (m)</label>
+                    <input id="cameraMoveOrbitAltInput" type="number" min="10" max="2000" step="10" value="80" />
+                  </div>
+                  <div class="field-row">
+                    <label for="cameraMoveOrbitSpeedInput">Angular speed (°/s)</label>
+                    <input id="cameraMoveOrbitSpeedInput" type="number" min="5" max="180" step="5" value="45" />
+                  </div>
+                </div>
+                <!-- lookAt-specific params -->
+                <div id="cameraMoveLookAtParams" class="field-stack" hidden>
+                  <div class="field-row">
+                    <label for="cameraMoveLookAtAltInput">Camera altitude (m)</label>
+                    <input id="cameraMoveLookAtAltInput" type="number" min="50" max="5000" step="50" value="300" />
+                  </div>
+                  <div class="field-row">
+                    <label for="cameraMoveLookAtRadiusInput">Camera radius (m)</label>
+                    <input id="cameraMoveLookAtRadiusInput" type="number" min="50" max="5000" step="50" value="400" />
+                  </div>
+                </div>
+                <!-- cinematic-specific params -->
+                <div id="cameraMoveCinematicParams" class="field-stack" hidden>
+                  <div class="field-row">
+                    <label for="cameraMoveCinematicEndOffsetInput">Sweep ahead (s)</label>
+                    <input id="cameraMoveCinematicEndOffsetInput" type="number" min="5" max="300" step="5" value="30" />
+                  </div>
+                  <div class="field-row">
+                    <label for="cameraMoveCinematicAltInput">Arc height multiplier</label>
+                    <input id="cameraMoveCinematicAltInput" type="number" min="1" max="10" step="0.5" value="3" />
+                  </div>
+                </div>
+                <div class="button-row">
+                  <button id="addCameraMoveButton" type="button">Add move at current time</button>
+                </div>
+                <div id="cameraMovesList" class="camera-moves-list"></div>
+              </div>
+            </details>
+          </section>
+          <!-- end F-15 -->
           <!-- F-38: collapsible Overlays section (closed by default) -->
           <section class="controls-panel" aria-label="Overlay controls">
             <details id="sectionDetailsOverlay" class="section-details">

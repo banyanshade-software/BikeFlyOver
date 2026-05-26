@@ -30,6 +30,9 @@ const {
   MEDIA_ANIMATION_EFFECTS,
 } = require("../shared/media-presentation");
 // end F-76
+// F-15: expose camera-move normaliser so the renderer can validate user-authored moves.
+const { normalizeCameraMove: normalizeCameraMoveShared } = require("../shared/camera-moves");
+// end F-15
 
 function subscribe(channel, listener) {
   const wrappedListener = (_event, payload) => {
@@ -61,6 +64,11 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
     return normalizeMediaAlignmentOffsetsShared(offsets);
   },
   // end F-21
+  // F-15: expose camera-move normaliser so the renderer can validate moves before adding them.
+  normalizeCameraMove(rawMove) {
+    return normalizeCameraMoveShared(rawMove);
+  },
+  // end F-15
   getExportOptions() {
     return {
       defaults: EXPORT_DEFAULTS,

@@ -1808,6 +1808,10 @@ function createPlaybackState(trackpoints, options = {}) {
     // F-66: cached geographic bounds for the map inset; lazily populated by drawMapInset on first draw.
     mapInsetBounds: null,
     // end F-66
+    // F-15: predefined camera moves authored by the user; each move overrides the normal
+    // follow/overview camera for its duration.
+    cameraMoves: [],
+    // end F-15
   };
 }
 
@@ -2046,6 +2050,21 @@ function resetFollowCameraSmoothing(playbackState) {
   playbackState.camera.smoothedFocus = null;
   playbackState.camera.smoothedHeading = null;
 }
+
+// F-15: return the first camera move whose time window covers the current timestamp,
+// or null if no move is active.
+function getActiveCameraMove(playbackState) {
+  const { currentTimestamp, cameraMoves } = playbackState;
+  if (!Array.isArray(cameraMoves)) return null;
+  for (const move of cameraMoves) {
+    const endTimestamp = move.triggerTimestamp + move.durationSeconds * 1000;
+    if (currentTimestamp >= move.triggerTimestamp && currentTimestamp < endTimestamp) {
+      return move;
+    }
+  }
+  return null;
+}
+// end F-15
 
 function updateCameraUI(playbackState) {
   const isFollowMode = playbackState.camera.mode === "follow";
@@ -3367,12 +3386,183 @@ function updateMetricOverlay(playbackState) {
   applyOverlayVisibility(playbackState);
 }
 
+// F-15: compute and apply an orbit camera move for a single frame.
+// The camera revolves around the current track position at a fixed radius and altitude.
+function applyOrbitFrame(viewer, playbackState, move, progress) {
+  const Cesium = window.Cesium;
+  const currentPosition = playbackState.currentSamplePosition;
+  if (!currentPosition) return;
+
+  const ellipsoid = viewer.scene.globe.ellipsoid;
+  const up = ellipsoid.geodeticSurfaceNormal(currentPosition, new Cesium.Cartesian3());
+  const startAngleRad =
+    Number.isFinite(playbackState.camera.smoothedHeading)
+      ? playbackState.camera.smoothedHeading
+      : 0;
+  const angularSpeedRad = Cesium.Math.toRadians(move.orbitAngularSpeedDegPerSec);
+  const orbitAngle = startAngleRad + progress * move.durationSeconds * angularSpeedRad;
+
+  const focusPluAlt = Cesium.Cartesian3.add(
+    currentPosition,
+    Cesium.Cartesian3.multiplyByScalar(up, move.orbitAltitudeOffsetMeters, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+  const transform = Cesium.Transforms.eastNorthUpToFixedFrame(focusPluAlt);
+  const localOffset = new Cesium.Cartesian3(
+    Math.sin(orbitAngle) * move.orbitRadiusMeters,
+    Math.cos(orbitAngle) * move.orbitRadiusMeters,
+    0,
+  );
+  const destination = Cesium.Matrix4.multiplyByPoint(transform, localOffset, new Cesium.Cartesian3());
+  const direction = Cesium.Cartesian3.normalize(
+    Cesium.Cartesian3.subtract(focusPluAlt, destination, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+  const cameraUp = ellipsoid.geodeticSurfaceNormal(destination, new Cesium.Cartesian3());
+
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.camera.setView({ destination, orientation: { direction, up: cameraUp } });
+}
+
+// F-15: compute and apply a look-at camera move.
+// The camera stays at a fixed elevated point near the route and watches the track position.
+function applyLookAtFrame(viewer, playbackState, move, _progress) {
+  const Cesium = window.Cesium;
+  const currentPosition = playbackState.currentSamplePosition;
+  if (!currentPosition) return;
+
+  const ellipsoid = viewer.scene.globe.ellipsoid;
+  const up = ellipsoid.geodeticSurfaceNormal(currentPosition, new Cesium.Cartesian3());
+  const elevatedCenter = Cesium.Cartesian3.add(
+    currentPosition,
+    Cesium.Cartesian3.multiplyByScalar(up, move.lookAtAltitudeOffsetMeters, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+
+  const heading =
+    Number.isFinite(playbackState.camera.smoothedHeading)
+      ? playbackState.camera.smoothedHeading
+      : 0;
+
+  const transform = Cesium.Transforms.eastNorthUpToFixedFrame(elevatedCenter);
+  const localOffset = new Cesium.Cartesian3(
+    -Math.sin(heading) * move.lookAtCameraRadiusMeters,
+    -Math.cos(heading) * move.lookAtCameraRadiusMeters,
+    0,
+  );
+  const destination = Cesium.Matrix4.multiplyByPoint(transform, localOffset, new Cesium.Cartesian3());
+  const direction = Cesium.Cartesian3.normalize(
+    Cesium.Cartesian3.subtract(currentPosition, destination, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+  const cameraUp = ellipsoid.geodeticSurfaceNormal(destination, new Cesium.Cartesian3());
+
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.camera.setView({ destination, orientation: { direction, up: cameraUp } });
+}
+
+// F-15: compute and apply a cinematic sweep move.
+// The camera arcs from the current position to a position ahead on the track,
+// interpolating smoothly via a smooth-step easing function.
+function applyCinematicFrame(viewer, playbackState, move, progress) {
+  const Cesium = window.Cesium;
+  const trackpoints = playbackState.trackpoints;
+  if (!trackpoints?.length) return;
+
+  // Smooth-step easing so the sweep accelerates and decelerates gracefully.
+  const t = progress * progress * (3 - 2 * progress);
+
+  const startPos = playbackState.currentSamplePosition;
+  if (!startPos) return;
+
+  // Find the target position: cinematicEndOffsetSeconds ahead on the track.
+  const endTargetTimestamp = Math.min(
+    playbackState.currentTimestamp +
+      move.cinematicEndOffsetSeconds * 1000 +
+      move.durationSeconds * 1000,
+    playbackState.endTimestamp,
+  );
+  let endIndex = playbackState.currentIndex;
+  while (
+    endIndex < trackpoints.length - 1 &&
+    trackpoints[endIndex + 1].timestamp <= endTargetTimestamp
+  ) {
+    endIndex += 1;
+  }
+  const endTrackpoint = trackpoints[endIndex];
+  const endPos = Cesium.Cartesian3.fromDegrees(
+    endTrackpoint.lon,
+    endTrackpoint.lat,
+    endTrackpoint.alt ?? 0,
+  );
+
+  const ellipsoid = viewer.scene.globe.ellipsoid;
+  const cameraSettings = normalizeCameraSettings(playbackState.camera.settings);
+  const arcAltitude =
+    cameraSettings.followAltitudeOffsetMeters * move.cinematicAltitudeMultiplier;
+
+  // Interpolate a midpoint arc: camera travels above the midpoint of the route span.
+  const midPos = Cesium.Cartesian3.lerp(startPos, endPos, 0.5, new Cesium.Cartesian3());
+  const midUp = ellipsoid.geodeticSurfaceNormal(midPos, new Cesium.Cartesian3());
+  const arcMid = Cesium.Cartesian3.add(
+    midPos,
+    Cesium.Cartesian3.multiplyByScalar(midUp, arcAltitude, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+
+  // Quadratic bezier: start → arcMid → end.
+  const p0 = startPos;
+  const p1 = arcMid;
+  const p2 = endPos;
+  const u = 1 - t;
+  const destination = new Cesium.Cartesian3(
+    u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+    u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+    u * u * p0.z + 2 * u * t * p1.z + t * t * p2.z,
+  );
+
+  // Always look at the end point from wherever the camera is.
+  const direction = Cesium.Cartesian3.normalize(
+    Cesium.Cartesian3.subtract(endPos, destination, new Cesium.Cartesian3()),
+    new Cesium.Cartesian3(),
+  );
+  const cameraUp = ellipsoid.geodeticSurfaceNormal(destination, new Cesium.Cartesian3());
+
+  viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  viewer.camera.setView({ destination, orientation: { direction, up: cameraUp } });
+}
+
+// F-15: dispatch to the correct frame-computation function for the active move type.
+function applyCameraMoveFrame(viewer, playbackState, move, progress) {
+  if (move.type === "orbit") {
+    applyOrbitFrame(viewer, playbackState, move, progress);
+  } else if (move.type === "lookAt") {
+    applyLookAtFrame(viewer, playbackState, move, progress);
+  } else if (move.type === "cinematic") {
+    applyCinematicFrame(viewer, playbackState, move, progress);
+  }
+}
+// end F-15
+
 function syncPlaybackState(viewer, playbackState, options = {}) {
   advancePlaybackIndex(playbackState);
   interpolateTrackpoint(playbackState);
   updateMarkerPosition(playbackState);
 
-  if (playbackState.camera.mode === "follow") {
+  // F-15: if a predefined camera move is active, override the normal follow/overview camera.
+  const activeMove = getActiveCameraMove(playbackState);
+  if (activeMove) {
+    const progress = Math.min(
+      1,
+      Math.max(
+        0,
+        (playbackState.currentTimestamp - activeMove.triggerTimestamp) /
+          (activeMove.durationSeconds * 1000),
+      ),
+    );
+    applyCameraMoveFrame(viewer, playbackState, activeMove, progress);
+  } else if (playbackState.camera.mode === "follow") {
+  // end F-15
     updateFollowCamera(viewer, playbackState, {
       useSmoothing: !(options.deterministicCamera ?? false),
     });
@@ -3800,12 +3990,127 @@ function applyParameterInputAttributes() {
   );
 }
 
+// F-15: re-render the list of camera moves in the sidebar.
+function renderCameraMovesList(playbackState) {
+  const listEl = document.getElementById("cameraMovesList");
+  if (!(listEl instanceof HTMLElement)) return;
+
+  const moves = playbackState.cameraMoves;
+  if (!moves?.length) {
+    listEl.innerHTML = '<p class="helper-text">No camera moves added yet.</p>';
+    return;
+  }
+
+  const totalDuration = playbackState.durationMs || 1;
+  listEl.innerHTML = moves
+    .map((move) => {
+      const relSec = ((move.triggerTimestamp - playbackState.startTimestamp) / 1000).toFixed(1);
+      const typeLabel = { orbit: "Orbit", lookAt: "Look-at", cinematic: "Cinematic" }[move.type] || move.type;
+      return `<div class="camera-move-row" data-move-id="${move.id}">
+        <span class="camera-move-type">${typeLabel}</span>
+        <span class="camera-move-time">@${relSec}s</span>
+        <span class="camera-move-duration">${move.durationSeconds}s</span>
+        <button type="button" class="camera-move-delete" data-move-id="${move.id}" title="Delete move">✕</button>
+      </div>`;
+    })
+    .join("");
+
+  listEl.querySelectorAll(".camera-move-delete").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.moveId;
+      playbackState.cameraMoves = playbackState.cameraMoves.filter((m) => m.id !== id);
+      renderCameraMovesList(playbackState);
+    });
+  });
+}
+
+// F-15: show/hide type-specific parameter panels based on the selected move type.
+function syncCameraMoveParamVisibility() {
+  const type = document.getElementById("cameraMoveTypeSelect")?.value;
+  const orbitEl = document.getElementById("cameraMoveOrbitParams");
+  const lookAtEl = document.getElementById("cameraMoveLookAtParams");
+  const cinematicEl = document.getElementById("cameraMoveCinematicParams");
+  if (orbitEl) orbitEl.hidden = type !== "orbit";
+  if (lookAtEl) lookAtEl.hidden = type !== "lookAt";
+  if (cinematicEl) cinematicEl.hidden = type !== "cinematic";
+
+  const durationInput = document.getElementById("cameraMoveDurationInput");
+  if (durationInput instanceof HTMLInputElement) {
+    const defaults = { orbit: 6, lookAt: 4, cinematic: 5 };
+    if (!durationInput._userEdited) {
+      durationInput.value = String(defaults[type] ?? 6);
+    }
+  }
+}
+
+// F-15: wire up the Camera Moves section controls.
+function setupCameraMovesControls(viewer, playbackState) {
+  const typeSelect = document.getElementById("cameraMoveTypeSelect");
+  const addButton = document.getElementById("addCameraMoveButton");
+  const durationInput = document.getElementById("cameraMoveDurationInput");
+
+  syncCameraMoveParamVisibility();
+  renderCameraMovesList(playbackState);
+
+  typeSelect?.addEventListener("change", () => {
+    syncCameraMoveParamVisibility();
+  });
+
+  if (durationInput instanceof HTMLInputElement) {
+    durationInput.addEventListener("input", () => {
+      durationInput._userEdited = true;
+    });
+  }
+
+  addButton?.addEventListener("click", () => {
+    const type = typeSelect instanceof HTMLSelectElement ? typeSelect.value : "orbit";
+    const duration = Math.max(
+      1,
+      parseFloat(document.getElementById("cameraMoveDurationInput")?.value) || 6,
+    );
+
+    const rawMove = {
+      id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      type,
+      triggerTimestamp: playbackState.currentTimestamp,
+      durationSeconds: duration,
+    };
+
+    if (type === "orbit") {
+      rawMove.orbitRadiusMeters =
+        parseFloat(document.getElementById("cameraMoveOrbitRadiusInput")?.value) || 150;
+      rawMove.orbitAltitudeOffsetMeters =
+        parseFloat(document.getElementById("cameraMoveOrbitAltInput")?.value) || 80;
+      rawMove.orbitAngularSpeedDegPerSec =
+        parseFloat(document.getElementById("cameraMoveOrbitSpeedInput")?.value) || 45;
+    } else if (type === "lookAt") {
+      rawMove.lookAtAltitudeOffsetMeters =
+        parseFloat(document.getElementById("cameraMoveLookAtAltInput")?.value) || 300;
+      rawMove.lookAtCameraRadiusMeters =
+        parseFloat(document.getElementById("cameraMoveLookAtRadiusInput")?.value) || 400;
+    } else if (type === "cinematic") {
+      rawMove.cinematicEndOffsetSeconds =
+        parseFloat(document.getElementById("cameraMoveCinematicEndOffsetInput")?.value) || 30;
+      rawMove.cinematicAltitudeMultiplier =
+        parseFloat(document.getElementById("cameraMoveCinematicAltInput")?.value) || 3;
+    }
+
+    // Normalise and insert, keeping list sorted.
+    const normalised = window.bikeFlyOverApp?.normalizeCameraMove?.(rawMove) ?? rawMove;
+    if (normalised) {
+      playbackState.cameraMoves = [...playbackState.cameraMoves, normalised].sort(
+        (a, b) => a.triggerTimestamp - b.triggerTimestamp,
+      );
+      renderCameraMovesList(playbackState);
+    }
+  });
+}
+// end F-15
+
 // F-69: wire the terrain exaggeration control so terrain relief and grounded route geometry update together.
 function setupTerrainControls(viewer, playbackState) {
   const terrainEnabledCheckbox = document.getElementById("terrainEnabledCheckbox");
   const terrainExaggerationInput = document.getElementById("terrainExaggerationInput");
-
-  syncTerrainSettingsControls(playbackState);
 
   terrainEnabledCheckbox?.addEventListener("change", async (event) => {
     const target = event.currentTarget;
@@ -4708,6 +5013,9 @@ function collectProjectState(playbackState) {
     track,
     mediaItems: mediaLibraryState.items,
     mediaAlignmentOffsets: mediaLibraryState.alignmentOffsets,
+    // F-15: include authored camera moves in the project snapshot.
+    cameraMoves: playbackState.cameraMoves ?? [],
+    // end F-15
     playback: {
       currentTimestamp: playbackState.currentTimestamp,
       isPlaying: false,
@@ -4773,6 +5081,13 @@ function restoreProjectState(viewer, playbackState, loadResult) {
     resetCameraSmoothing: true,
     syncControls: true,
   });
+
+  // F-15: restore authored camera moves from the saved project.
+  if (Array.isArray(projectState.cameraMoves)) {
+    playbackState.cameraMoves = projectState.cameraMoves;
+    renderCameraMovesList(playbackState);
+  }
+  // end F-15
 
   // Restore export UI inputs (speed multiplier, adaptive strength, FPS, etc.).
   const es = projectState.exportSettings;
@@ -5379,6 +5694,9 @@ async function initializeApp() {
       setupPlaybackControls(viewer, playbackState);
       setupCameraSettingsControls(viewer, playbackState);
       setupTerrainControls(viewer, playbackState);
+      // F-15: wire up the Camera Moves section.
+      setupCameraMovesControls(viewer, playbackState);
+      // end F-15
       setupOverlayControls(playbackState);
       setupExportControls();
       // F-01: seed the import UI with the sample track that was loaded on startup.
