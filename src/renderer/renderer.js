@@ -3386,6 +3386,12 @@ function updateMetricOverlay(playbackState) {
   applyOverlayVisibility(playbackState);
 }
 
+// F-15: return true only when a Cartesian3 is safe to pass to viewer.camera.setView.
+// Positions at or near Earth's center (magnitude < 1 m) would crash Cesium tile queries.
+function isSafeCameraDestination(Cesium, dest) {
+  return dest instanceof Cesium.Cartesian3 && Cesium.Cartesian3.magnitude(dest) > 1;
+}
+
 // F-15: compute and apply an orbit camera move for a single frame.
 // The camera revolves around the current track position at a fixed radius and altitude.
 function applyOrbitFrame(viewer, playbackState, move, progress) {
@@ -3421,6 +3427,7 @@ function applyOrbitFrame(viewer, playbackState, move, progress) {
   const cameraUp = ellipsoid.geodeticSurfaceNormal(destination, new Cesium.Cartesian3());
 
   viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  if (!isSafeCameraDestination(Cesium, destination)) return;
   viewer.camera.setView({ destination, orientation: { direction, up: cameraUp } });
 }
 
@@ -3458,6 +3465,7 @@ function applyLookAtFrame(viewer, playbackState, move, _progress) {
   const cameraUp = ellipsoid.geodeticSurfaceNormal(destination, new Cesium.Cartesian3());
 
   viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  if (!isSafeCameraDestination(Cesium, destination)) return;
   viewer.camera.setView({ destination, orientation: { direction, up: cameraUp } });
 }
 
@@ -3491,9 +3499,9 @@ function applyCinematicFrame(viewer, playbackState, move, progress) {
   }
   const endTrackpoint = trackpoints[endIndex];
   const endPos = Cesium.Cartesian3.fromDegrees(
-    endTrackpoint.lon,
-    endTrackpoint.lat,
-    endTrackpoint.alt ?? 0,
+    endTrackpoint.longitude,
+    endTrackpoint.latitude,
+    endTrackpoint.altitude ?? 0,
   );
 
   const ellipsoid = viewer.scene.globe.ellipsoid;
@@ -3529,6 +3537,7 @@ function applyCinematicFrame(viewer, playbackState, move, progress) {
   const cameraUp = ellipsoid.geodeticSurfaceNormal(destination, new Cesium.Cartesian3());
 
   viewer.camera.lookAtTransform(Cesium.Matrix4.IDENTITY);
+  if (!isSafeCameraDestination(Cesium, destination)) return;
   viewer.camera.setView({ destination, orientation: { direction, up: cameraUp } });
 }
 
