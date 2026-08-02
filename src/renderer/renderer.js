@@ -2814,10 +2814,14 @@ function createViewer(renderMode) {
   viewer.scene.screenSpaceCameraController.inertiaTranslate = 0;
   viewer.scene.screenSpaceCameraController.inertiaZoom = 0;
 
-  if (renderMode === "export") {
-    viewer.scene.requestRenderMode = true;
-    viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
-  }
+  // Perf: stop Cesium's built-in clock from advancing; the app manages its own timestamps.
+  // An advancing clock shifts the sun position (enableLighting=true) and triggers re-renders.
+  viewer.clock.shouldAnimate = false;
+
+  // Perf: only render when something explicitly changes; never auto-render on elapsed time alone.
+  // Export mode sets the same flags for the same reason.
+  viewer.scene.requestRenderMode = true;
+  viewer.scene.maximumRenderTimeChange = Number.POSITIVE_INFINITY;
 
   return viewer;
 }
@@ -3105,12 +3109,15 @@ function buildPlayedRoutePositions(Cesium, playbackState) {
 function addPlaybackEntities(viewer, playbackState) {
   const Cesium = window.Cesium;
 
-  // Use a CallbackProperty so Cesium reads the current position live every render frame
-  // rather than relying on repeated entity.position reassignment, which can lag after reload.
+  // Perf: use static ConstantPositionProperty instead of CallbackProperty(fn, false).
+  // CallbackProperty with isConstant=false forces Cesium to re-render every frame regardless of
+  // requestRenderMode. Position is updated explicitly via updateMarkerPosition each sync cycle.
   const markerEntity = viewer.entities.add({
     id: "current-position-marker",
     name: "Current position",
-    position: new Cesium.CallbackProperty(() => playbackState.currentSamplePosition, false),
+    position: new Cesium.ConstantPositionProperty(
+      playbackState.currentSamplePosition || Cesium.Cartesian3.ZERO,
+    ),
     point: {
       pixelSize: 16,
       color: Cesium.Color.fromCssColorString("#ffe56a"),
@@ -3120,13 +3127,15 @@ function addPlaybackEntities(viewer, playbackState) {
     },
   });
 
+  // Perf: same reason as marker — use a ConstantProperty seeded with the initial played positions.
+  // Positions are rebuilt and reassigned explicitly in updateMarkerPosition each sync cycle.
   const progressEntity = viewer.entities.add({
     id: "played-route",
     name: "Played route",
     polyline: {
-      positions: new Cesium.CallbackProperty(() => {
-        return buildPlayedRoutePositions(Cesium, playbackState);
-      }, false),
+      positions: new Cesium.ConstantProperty(
+        buildPlayedRoutePositions(Cesium, playbackState),
+      ),
       width: 40, // width of completed route
       clampToGround: true,
       material: new Cesium.PolylineGlowMaterialProperty({
@@ -3140,9 +3149,19 @@ function addPlaybackEntities(viewer, playbackState) {
   playbackState.progressEntity = progressEntity;
 }
 
-function updateMarkerPosition(_playbackState) {
-  // Position is driven by the CallbackProperty set in addPlaybackEntities;
-  // interpolateTrackpoint keeps currentSamplePosition current, the callback reads it live.
+function updateMarkerPosition(playbackState) {
+  // Perf: push updated position and played-route into the static Cesium properties rather than
+  // using CallbackProperty, so requestRenderMode can suppress idle redraws.
+  if (playbackState.markerEntity && playbackState.currentSamplePosition) {
+    playbackState.markerEntity.position.setValue(playbackState.currentSamplePosition);
+  }
+
+  if (playbackState.progressEntity) {
+    const Cesium = window.Cesium;
+    playbackState.progressEntity.polyline.positions.setValue(
+      buildPlayedRoutePositions(Cesium, playbackState),
+    );
+  }
 }
 
 function updatePlaybackUI(playbackState) {
@@ -3591,6 +3610,10 @@ function syncPlaybackState(viewer, playbackState, options = {}) {
   if (options.updateMediaPreview !== false) {
     void updateMediaPreviewOverlay(playbackState);
   }
+
+  // Perf: with requestRenderMode=true Cesium won't render unless asked; explicitly request a frame
+  // after every state sync so playback, scrubbing, and camera updates are always reflected.
+  viewer.scene.requestRender();
 }
 
 function setPlaybackTimestamp(viewer, playbackState, timestamp, options = {}) {
