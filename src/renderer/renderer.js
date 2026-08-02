@@ -5830,11 +5830,14 @@ function showTraceDropModal(viewer, playbackState, trackData, overlapInfo) {
 
 // F-71: wire window-level drag-and-drop for GPS trace files and media files in preview mode.
 function setupTraceDropHandler(viewer, playbackState) {
-  // Perf: dataTransfer.files is EMPTY during dragover in Electron — only populated on drop.
-  // Check dataTransfer.types for "Files" instead of inspecting individual files.
+  // dataTransfer.files is EMPTY during dragover in Electron — only populated on drop.
+  // We can't inspect extensions at this point, but we can check dataTransfer.items for kind.
   document.addEventListener("dragover", (e) => {
-    if (e.dataTransfer.types.includes("Files")) {
+    const hasFileItems = Array.from(e.dataTransfer.items).some((item) => item.kind === "file");
+    if (hasFileItems) {
       e.preventDefault();
+      // Determine a drop effect: if all items have a recognised MIME type we allow; otherwise copy.
+      // In practice, local-file MIME types are often "" so we always show "copy" here.
       e.dataTransfer.dropEffect = "copy";
     }
   });
@@ -5845,9 +5848,11 @@ function setupTraceDropHandler(viewer, playbackState) {
     // Trace files take priority: if any trace extension is present, show the confirmation modal.
     const traceFile = getDroppedTraceFile(e.dataTransfer);
     if (traceFile) {
+      // F-71: file.path is empty with contextIsolation=true (Electron 28+); use getPathForFile.
+      const tracePath = window.bikeFlyOverApp.getPathForFile(traceFile);
       let trackData;
       try {
-        const result = await window.bikeFlyOverApp.loadActivityFromPath(traceFile.path);
+        const result = await window.bikeFlyOverApp.loadActivityFromPath(tracePath);
         if (!result?.trackData?.trackpoints?.length) {
           setStatus("Dropped trace file has no trackpoints.");
           return;
@@ -5865,7 +5870,12 @@ function setupTraceDropHandler(viewer, playbackState) {
     // No trace file — check for media files and import them directly.
     const mediaFiles = getDroppedMediaFiles(e.dataTransfer);
     if (mediaFiles.length > 0) {
-      await importDroppedMedia(viewer, playbackState, mediaFiles.map((f) => f.path));
+      const mediaPaths = mediaFiles.map((f) => window.bikeFlyOverApp.getPathForFile(f));
+      await importDroppedMedia(viewer, playbackState, mediaPaths);
+    } else if (e.dataTransfer.files.length > 0) {
+      // F-71: file dropped but extension not recognised — tell the user.
+      const names = Array.from(e.dataTransfer.files).map((f) => f.name).join(", ");
+      setStatus(`Unsupported file type: ${names}. Drop a .tcx/.gpx/.fit trace or .jpg/.png/.mp4/.mov media.`);
     }
   });
 }

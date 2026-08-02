@@ -1,5 +1,5 @@
 const { pathToFileURL } = require("node:url");
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 const {
   MEDIA_ALIGNMENT_OFFSET_DEFAULTS,
   MEDIA_ALIGNMENT_OFFSET_FIELDS,
@@ -127,6 +127,12 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
   // F-71: subscribe to the "load this activity" push sent to new windows pre-seeded with a trace.
   onLoadActivity(listener) {
     return subscribe("load-activity", listener);
+  },
+  // F-71: resolve the filesystem path of a File object from a drag-and-drop event.
+  // file.path is not populated in the renderer with contextIsolation=true (Electron 28+);
+  // webUtils.getPathForFile() must be called from the preload context instead.
+  getPathForFile(file) {
+    return webUtils.getPathForFile(file);
   },
   // end F-71
   toFileUrl(filePath) {
