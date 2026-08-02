@@ -672,6 +672,20 @@
           <!-- end F-66 -->
       </main>
     </div>
+    <!-- F-71: drag-and-drop trace confirmation dialog -->
+    <div id="traceDropModal" class="modal-overlay" hidden>
+      <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="traceDropModalTitle">
+        <h2 id="traceDropModalTitle">Import new activity trace?</h2>
+        <p id="traceDropModalBody"></p>
+        <p id="traceDropModalWarning" class="modal-warning" hidden></p>
+        <div class="modal-actions">
+          <button id="traceDropRefuse">Refuse</button>
+          <button id="traceDropAcceptThis">Accept in this window</button>
+          <button id="traceDropAcceptNew" class="modal-btn-primary">Accept in new window</button>
+        </div>
+      </div>
+    </div>
+    <!-- end F-71 -->
     <script src="./renderer.js"></script>
   </body>
 </html>

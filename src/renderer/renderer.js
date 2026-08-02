@@ -1735,9 +1735,18 @@ function renderSummary(sampleTrack) {
   `;
 }
 
+// F-71: true when a track with at least one trackpoint has been loaded.
+function hasTrack(playbackState) {
+  return playbackState.trackpoints.length > 0;
+}
+// end F-71
+
 function createPlaybackState(trackpoints, options = {}) {
-  const fullStartTimestamp = trackpoints[0].timestamp;
-  const fullEndTimestamp = trackpoints[trackpoints.length - 1].timestamp;
+  // F-71: guard against empty trackpoints (no activity loaded yet).
+  const hasTrackpoints = trackpoints.length > 0;
+  const fullStartTimestamp = hasTrackpoints ? trackpoints[0].timestamp : 0;
+  const fullEndTimestamp   = hasTrackpoints ? trackpoints[trackpoints.length - 1].timestamp : 0;
+  // end F-71
 
   return {
     trackpoints,
@@ -1749,7 +1758,7 @@ function createPlaybackState(trackpoints, options = {}) {
     durationMs: fullEndTimestamp - fullStartTimestamp,
     currentTimestamp: fullStartTimestamp,
     currentIndex: 0,
-    currentSample: trackpoints[0],
+    currentSample: trackpoints[0] ?? null,  // F-71: null when no track loaded
     isPlaying: false,
     speedMultiplier: options.speedMultiplier ?? EXPORT_OPTIONS.defaults.speedMultiplier,
     lastFrameTime: null,
@@ -3165,6 +3174,23 @@ function updateMarkerPosition(playbackState) {
 }
 
 function updatePlaybackUI(playbackState) {
+  // F-71: when no track is loaded, show a minimal "no activity" state and disable controls.
+  if (!hasTrack(playbackState) || !playbackState.currentSample) {
+    setTextContent("playbackStatus", "No activity loaded");
+    setPlaybackButtonLabel("Play");
+    setElementDisabled("playPauseButton", true);
+    setElementDisabled("timelineSlider", true);
+    setElementDisabled("timelineRangeStartSlider", true);
+    setElementDisabled("timelineRangeEndSlider", true);
+    return;
+  }
+  // end F-71
+  // F-71: re-enable controls that were disabled in the no-track state.
+  setElementDisabled("playPauseButton", false);
+  setElementDisabled("timelineSlider", false);
+  setElementDisabled("timelineRangeStartSlider", false);
+  setElementDisabled("timelineRangeEndSlider", false);
+  // end F-71
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
   const progressRatio = getPlaybackProgressRatio(playbackState);
   const timelineSlider = document.getElementById("timelineSlider");
@@ -3334,6 +3360,9 @@ function drawMapInset(playbackState) {
 // end F-66
 
 function updateMetricOverlay(playbackState) {
+  // F-71: nothing to display when no track is loaded.
+  if (!hasTrack(playbackState) || !playbackState.currentSample) return;
+  // end F-71
   const speedGaugeDial = document.getElementById("metricOverlaySpeedGaugeDial");
   const heartRateGaugeCard = document.getElementById("metricOverlayHeartRateGaugeCard");
   const heartRateGaugeFill = document.getElementById("metricOverlayHeartRateGaugeFill");
@@ -5015,6 +5044,9 @@ function reloadTrack(viewer, playbackState, newTrackData) {
   updatePlaybackUI(playbackState);
   updateCameraUI(playbackState);
   updateImportActivityUi({ status: "complete", trackData: newTrackData });
+  // F-71: a track is now loaded — enable export.
+  setElementDisabled("startExportButton", false);
+  // end F-71
 
   applyMediaAlignmentToLibrary(playbackState);
   refreshMediaLibraryPresentation(viewer, playbackState);
@@ -5233,6 +5265,26 @@ function setupImportActivityControls(viewer, playbackState) {
     }
   });
   // end F-34
+
+  // F-71: handle the "load-activity" push from main when this window was opened for a specific trace.
+  window.bikeFlyOverApp?.onLoadActivity(async ({ filePath }) => {
+    updateImportActivityUi({ status: "running", label: "Loading activity…" });
+    try {
+      const result = await window.bikeFlyOverApp.loadActivityFromPath(filePath);
+      if (!result?.trackData?.trackpoints?.length) {
+        updateImportActivityUi({ status: "error", label: "No trackpoints found in activity." });
+        return;
+      }
+      currentActivityFilePath = result.trackData.filePath;
+      reloadTrack(viewer, playbackState, result.trackData);
+    } catch (err) {
+      updateImportActivityUi({
+        status: "error",
+        label: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
+  // end F-71
 }
 // end F-01
 
@@ -5657,6 +5709,146 @@ function setupExportRenderBridge(viewer, playbackState) {
   });
 }
 
+// F-71: file extensions recognised as GPS trace files for drag-and-drop.
+const TRACE_EXTENSIONS = new Set([".tcx", ".gpx", ".fit"]);
+
+// F-71: return the first trace-extension file from a DataTransfer, or null.
+function getDroppedTraceFile(dataTransfer) {
+  if (!dataTransfer?.files) return null;
+  for (const file of dataTransfer.files) {
+    const dotIdx = file.name.lastIndexOf(".");
+    if (dotIdx === -1) continue;
+    const ext = file.name.slice(dotIdx).toLowerCase();
+    if (TRACE_EXTENSIONS.has(ext)) return file;
+  }
+  return null;
+}
+
+// F-71: check if existing media items overlap the dropped trace's time range.
+// Returns metadata used to build the warning line in the confirmation dialog.
+function checkMediaDateOverlap(mediaItems, trackData) {
+  const itemsWithTimestamp = mediaItems.filter(
+    (item) => Number.isFinite(item.capturedAtTimestamp),
+  );
+  if (itemsWithTimestamp.length === 0) return { hasMedia: false };
+
+  const traceStart = trackData.trackpoints[0].timestamp;
+  const traceEnd   = trackData.trackpoints[trackData.trackpoints.length - 1].timestamp;
+  const overlapping = itemsWithTimestamp.filter(
+    (item) => item.capturedAtTimestamp >= traceStart && item.capturedAtTimestamp <= traceEnd,
+  );
+
+  return {
+    hasMedia: true,
+    totalWithTimestamp: itemsWithTimestamp.length,
+    overlapping: overlapping.length,
+    traceStart,
+    traceEnd,
+  };
+}
+
+// F-71: populate and reveal the 3-option confirmation modal for a drag-and-drop trace import.
+function showTraceDropModal(viewer, playbackState, trackData, overlapInfo) {
+  const modal         = document.getElementById("traceDropModal");
+  const bodyEl        = document.getElementById("traceDropModalBody");
+  const warnEl        = document.getElementById("traceDropModalWarning");
+
+  if (!modal || !bodyEl || !warnEl) return;
+
+  const existingTrack = hasTrack(playbackState);
+  const mediaCount    = mediaLibraryState.items.length;
+  const fileName      = trackData.fileName;
+  const traceStart    = new Date(trackData.trackpoints[0].timestamp);
+  const traceEnd      = new Date(trackData.trackpoints[trackData.trackpoints.length - 1].timestamp);
+  const dateRange     = `${traceStart.toLocaleDateString()} – ${traceEnd.toLocaleDateString()}`;
+
+  bodyEl.textContent = mediaCount > 0
+    ? `Import "${fileName}" (${dateRange})? This will replace the current track and discard all ${mediaCount} media item${mediaCount === 1 ? "" : "s"}.`
+    : `Import "${fileName}" (${dateRange})?${existingTrack ? " This will replace the current track." : ""}`;
+
+  if (overlapInfo.hasMedia && overlapInfo.overlapping === 0) {
+    warnEl.textContent =
+      `⚠ None of your ${overlapInfo.totalWithTimestamp} timed media item${overlapInfo.totalWithTimestamp === 1 ? "" : "s"} overlap this trace's date range — they will be discarded.`;
+    warnEl.hidden = false;
+  } else {
+    warnEl.hidden = true;
+  }
+
+  // Highlight the contextually appropriate default: "new window" if a track is already loaded.
+  const acceptThisEl = document.getElementById("traceDropAcceptThis");
+  const acceptNewEl  = document.getElementById("traceDropAcceptNew");
+  if (acceptThisEl && acceptNewEl) {
+    acceptThisEl.classList.toggle("modal-btn-primary", !existingTrack);
+    acceptNewEl.classList.toggle("modal-btn-primary",  existingTrack);
+  }
+
+  const close = () => { modal.hidden = true; };
+
+  // Replace button nodes to avoid stacking listeners across multiple drops.
+  ["traceDropRefuse", "traceDropAcceptThis", "traceDropAcceptNew"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.replaceWith(el.cloneNode(true));
+  });
+
+  document.getElementById("traceDropRefuse")?.addEventListener("click", close);
+
+  document.getElementById("traceDropAcceptThis")?.addEventListener("click", () => {
+    close();
+    // F-71: clear media library and load the dropped trace in the current window.
+    mediaLibraryState.items = [];
+    mediaLibraryState.alignmentOffsets = {
+      cameraOffsetsByCameraId: {},
+      mediaOffsetsByMediaId: {},
+    };
+    currentActivityFilePath = trackData.filePath;
+    reloadTrack(viewer, playbackState, trackData);
+  });
+
+  document.getElementById("traceDropAcceptNew")?.addEventListener("click", async () => {
+    close();
+    try {
+      await window.bikeFlyOverApp.openWithActivity(trackData.filePath);
+    } catch (err) {
+      setStatus(`Could not open new window: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+
+  modal.hidden = false;
+}
+
+// F-71: wire window-level drag-and-drop for GPS trace files in preview mode.
+function setupTraceDropHandler(viewer, playbackState) {
+  document.addEventListener("dragover", (e) => {
+    if (getDroppedTraceFile(e.dataTransfer)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    }
+  });
+
+  document.addEventListener("drop", async (e) => {
+    const file = getDroppedTraceFile(e.dataTransfer);
+    if (!file) return;
+    e.preventDefault();
+
+    let trackData;
+    try {
+      const result = await window.bikeFlyOverApp.loadActivityFromPath(file.path);
+      if (!result?.trackData?.trackpoints?.length) {
+        setStatus("Dropped trace file has no trackpoints.");
+        return;
+      }
+      trackData = result.trackData;
+    } catch (err) {
+      setStatus(`Could not read trace: ${err instanceof Error ? err.message : String(err)}`);
+      return;
+    }
+
+    const overlap = checkMediaDateOverlap(mediaLibraryState.items, trackData);
+    showTraceDropModal(viewer, playbackState, trackData, overlap);
+  });
+}
+// end F-71
+
 async function initializeApp() {
   document.body.classList.toggle("export-mode", RENDER_MODE === "export");
 
@@ -5670,8 +5862,9 @@ async function initializeApp() {
 
     setRouteStatus("Loading satellite basemap...");
     const viewer = createViewer(RENDER_MODE);
-    const sampleTrack = await window.bikeFlyOverApp.loadSampleTrack();
-    const playbackState = createPlaybackState(sampleTrack.trackpoints, {
+    // F-71: start with an empty playback state; the sample track was removed (was POC only).
+    // A track is loaded on first import (button or drag-and-drop).
+    const playbackState = createPlaybackState([], {
       adaptiveStrength: EXPORT_OPTIONS.defaults.adaptiveStrength,
       speedMultiplier: EXPORT_OPTIONS.defaults.speedMultiplier,
       cameraMode: EXPORT_OPTIONS.defaults.cameraMode,
@@ -5681,28 +5874,12 @@ async function initializeApp() {
       // end F-69
     });
     await initializeViewerTerrain(viewer, playbackState);
-    const { routeBoundingSphere, routeEntity, routePositions } = addRouteEntities(
-      viewer,
-      playbackState,
-      sampleTrack,
-    );
+    // end F-71
 
-    playbackState.routePositions = routePositions;
-    playbackState.currentSamplePosition = routePositions[0] || null;
-    playbackState.camera.routeBoundingSphere = routeBoundingSphere;
-    playbackState.camera.routeEntity = routeEntity;
-
-    addPlaybackEntities(viewer, playbackState);
-    renderSummary(sampleTrack);
-    setOverviewCamera(viewer, playbackState);
-    setPlaybackTimestamp(viewer, playbackState, playbackState.startTimestamp, {
-      deterministicCamera: RENDER_MODE === "export",
-      updateUi: RENDER_MODE !== "export",
-    });
-
+    // F-71: routePositions, marker, and playback entities are created by reloadTrack on first import.
     window.bikeFlyOverViewer = viewer;
-    window.sampleTrack = sampleTrack;
-    window.sampleRouteEntity = routeEntity;
+    window.sampleTrack = null;
+    window.sampleRouteEntity = null;
     window.playbackState = playbackState;
 
     if (RENDER_MODE === "preview") {
@@ -5718,6 +5895,9 @@ async function initializeApp() {
         currentFrame: 0,
         totalFrames: 0,
       });
+      // F-71: disable export button until a track is loaded.
+      setElementDisabled("startExportButton", true);
+      // end F-71
       updateMediaLibraryUi();
       void updateMediaPreviewOverlay(playbackState);
       setupExportRenderBridge(viewer, playbackState);
@@ -5731,14 +5911,14 @@ async function initializeApp() {
       // end F-15
       setupOverlayControls(playbackState);
       setupExportControls();
-      // F-01: seed the import UI with the sample track that was loaded on startup.
-      updateImportActivityUi({ status: "complete", trackData: sampleTrack });
-      // end F-01
-      startPlayback(viewer, playbackState);
-      setRouteStatus(
-        "Completed route is bright blue; upcoming route stays thin white.",
-      );
-      setStatus(`Following ${sampleTrack.fileName} with a trailing 3D camera.`);
+      // F-71: wire drag-and-drop for trace files.
+      setupTraceDropHandler(viewer, playbackState);
+      // end F-71
+      // F-71: show "no activity" status; drag-and-drop and the import button activate first load.
+      updateImportActivityUi({ status: "idle", label: "No activity imported yet." });
+      setRouteStatus("Import an activity to get started.");
+      setStatus("No activity loaded — use the Import section or drag and drop a TCX / GPX / FIT file.");
+      // end F-71
     }
 
     window.bikeFlyOverApp?.notifyReady({

@@ -6,7 +6,7 @@ const {
   alignMediaItemsToTrack: alignMediaItemsToTrackShared,
   normalizeMediaAlignmentOffsets: normalizeMediaAlignmentOffsetsShared,
 } = require("../shared/media-alignment");
-const { loadSampleTrack } = require("../shared/sample-track");
+// F-71: loadSampleTrack removed — the app no longer loads a bundled default track on startup.
 const {
   CAMERA_SETTINGS_FIELDS,
   EXPORT_CAMERA_MODES,
@@ -52,7 +52,6 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
     return alignMediaItemsToTrackShared(mediaItems, trackpoints, offsets);
   },
   // end F-21
-  loadSampleTrack,
   // F-21: publish the shared offset defaults/limits and normalizer so UI edits stay aligned with the shared timing model.
   getMediaAlignmentOptions() {
     return {
@@ -102,6 +101,11 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
     return ipcRenderer.invoke("activity-import");
   },
   // end F-01
+  // F-71: load an activity from a given file path (drag-and-drop — no file picker needed).
+  loadActivityFromPath(filePath) {
+    return ipcRenderer.invoke("activity-load-path", filePath);
+  },
+  // end F-71
   // F-33: serialize and write the current project state to a user-chosen .bfov file.
   saveProject(rawState) {
     return ipcRenderer.invoke("project-save", rawState);
@@ -112,6 +116,15 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
     return ipcRenderer.invoke("project-load");
   },
   // end F-34
+  // F-71: open a new preview window and pre-seed it with the given trace file path.
+  openWithActivity(filePath) {
+    return ipcRenderer.invoke("open-with-activity", filePath);
+  },
+  // F-71: subscribe to the "load this activity" push sent to new windows pre-seeded with a trace.
+  onLoadActivity(listener) {
+    return subscribe("load-activity", listener);
+  },
+  // end F-71
   toFileUrl(filePath) {
     return pathToFileURL(filePath).href;
   },

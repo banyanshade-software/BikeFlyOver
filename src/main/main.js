@@ -5,7 +5,7 @@ const { randomUUID } = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const ffmpegPath = require("ffmpeg-static");
-const { loadSampleTrack, loadActivityFile } = require("../shared/sample-track");
+const { loadActivityFile } = require("../shared/sample-track");
 const {
   detectMediaType,
   extractMediaTimestampMetadata,
@@ -105,6 +105,11 @@ function createDeferred() {
 function ownsActiveExport(webContents) {
   return activeExportSession?.ownerWebContents === webContents;
 }
+
+// F-71: maps webContents.id → filePath for windows opened via "accept in new window".
+// Consumed once in the renderer-ready handler so the new window receives its pre-seeded activity.
+const pendingWindowActivity = new Map();
+// end F-71
 
 function createMainWindow() {
   mainWindow = new BrowserWindow({
@@ -596,10 +601,12 @@ async function startExport(settings) {
     ...EXPORT_DEFAULTS,
     ...settings,
   });
-  // F-01: use the user-imported activity file path if one was passed in settings; fall back to the sample track.
-  const sampleTrack = settings?.activityFilePath
-    ? await loadActivityFile(settings.activityFilePath)
-    : await loadSampleTrack();
+  // F-01: use the user-imported activity file path passed in settings.
+  // F-71: no longer falls back to loadSampleTrack — an activity must be imported before export.
+  if (!settings?.activityFilePath) {
+    throw new Error("No activity file loaded. Import a track before exporting.");
+  }
+  const sampleTrack = await loadActivityFile(settings.activityFilePath);
   // end F-01
   const outputPath = await promptForExportPath(sampleTrack);
 
@@ -662,8 +669,16 @@ async function startExport(settings) {
 }
 
 app.whenReady().then(() => {
-  ipcMain.on("renderer-ready", () => {
+  ipcMain.on("renderer-ready", (event) => {
     console.log("BikeFlyOver renderer ready.");
+
+    // F-71: if this window was opened for a specific trace, push it to the renderer now.
+    const pendingPath = pendingWindowActivity.get(event.sender.id);
+    if (pendingPath) {
+      pendingWindowActivity.delete(event.sender.id);
+      event.sender.send("load-activity", { filePath: pendingPath });
+    }
+    // end F-71
 
     if (isSmokeTest) {
       setTimeout(() => {
@@ -726,6 +741,40 @@ app.whenReady().then(() => {
     return importActivityFile();
   });
   // end F-01
+
+  // F-71: load an activity from a given file path (drag-and-drop — no file picker).
+  ipcMain.handle("activity-load-path", async (_event, filePath) => {
+    if (typeof filePath !== "string" || filePath.length === 0) {
+      throw new Error("Invalid file path.");
+    }
+    const trackData = await loadActivityFile(filePath);
+    return { cancelled: false, trackData };
+  });
+  // end F-71
+
+  // F-71: open a new preview window and pre-seed it with the given trace file path.
+  ipcMain.handle("open-with-activity", async (_event, filePath) => {
+    const win = new BrowserWindow({
+      width: 1440,
+      height: 900,
+      minWidth: 1024,
+      minHeight: 720,
+      backgroundColor: "#06121d",
+      show: false,
+      webPreferences: {
+        preload: path.join(__dirname, "preload.js"),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false,
+        backgroundThrottling: false,
+      },
+    });
+    win.once("ready-to-show", () => win.show());
+    pendingWindowActivity.set(win.webContents.id, filePath);
+    void win.loadFile(rendererPath, { query: { mode: "preview" } });
+    return { opened: true };
+  });
+  // end F-71
 
   // F-33: save project state to a user-chosen .bfov file.
   ipcMain.handle("project-save", async (_event, rawState) => {
