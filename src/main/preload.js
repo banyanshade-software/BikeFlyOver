@@ -105,6 +105,10 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
   loadActivityFromPath(filePath) {
     return ipcRenderer.invoke("activity-load-path", filePath);
   },
+  // F-71: import media files from known paths (drag-and-drop — no file picker needed).
+  importMediaFromPaths(filePaths) {
+    return ipcRenderer.invoke("media-import-paths", filePaths);
+  },
   // end F-71
   // F-33: serialize and write the current project state to a user-chosen .bfov file.
   saveProject(rawState) {

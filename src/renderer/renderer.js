@@ -5711,6 +5711,8 @@ function setupExportRenderBridge(viewer, playbackState) {
 
 // F-71: file extensions recognised as GPS trace files for drag-and-drop.
 const TRACE_EXTENSIONS = new Set([".tcx", ".gpx", ".fit"]);
+// F-71: file extensions recognised as media files for drag-and-drop.
+const MEDIA_DROP_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".heic", ".mp4", ".mov"]);
 
 // F-71: return the first trace-extension file from a DataTransfer, or null.
 function getDroppedTraceFile(dataTransfer) {
@@ -5722,6 +5724,16 @@ function getDroppedTraceFile(dataTransfer) {
     if (TRACE_EXTENSIONS.has(ext)) return file;
   }
   return null;
+}
+
+// F-71: return all media-extension files from a DataTransfer.
+function getDroppedMediaFiles(dataTransfer) {
+  if (!dataTransfer?.files) return [];
+  return Array.from(dataTransfer.files).filter((file) => {
+    const dotIdx = file.name.lastIndexOf(".");
+    if (dotIdx === -1) return false;
+    return MEDIA_DROP_EXTENSIONS.has(file.name.slice(dotIdx).toLowerCase());
+  });
 }
 
 // F-71: check if existing media items overlap the dropped trace's time range.
@@ -5816,36 +5828,92 @@ function showTraceDropModal(viewer, playbackState, trackData, overlapInfo) {
   modal.hidden = false;
 }
 
-// F-71: wire window-level drag-and-drop for GPS trace files in preview mode.
+// F-71: wire window-level drag-and-drop for GPS trace files and media files in preview mode.
 function setupTraceDropHandler(viewer, playbackState) {
+  // Perf: dataTransfer.files is EMPTY during dragover in Electron — only populated on drop.
+  // Check dataTransfer.types for "Files" instead of inspecting individual files.
   document.addEventListener("dragover", (e) => {
-    if (getDroppedTraceFile(e.dataTransfer)) {
+    if (e.dataTransfer.types.includes("Files")) {
       e.preventDefault();
       e.dataTransfer.dropEffect = "copy";
     }
   });
 
   document.addEventListener("drop", async (e) => {
-    const file = getDroppedTraceFile(e.dataTransfer);
-    if (!file) return;
     e.preventDefault();
 
-    let trackData;
-    try {
-      const result = await window.bikeFlyOverApp.loadActivityFromPath(file.path);
-      if (!result?.trackData?.trackpoints?.length) {
-        setStatus("Dropped trace file has no trackpoints.");
+    // Trace files take priority: if any trace extension is present, show the confirmation modal.
+    const traceFile = getDroppedTraceFile(e.dataTransfer);
+    if (traceFile) {
+      let trackData;
+      try {
+        const result = await window.bikeFlyOverApp.loadActivityFromPath(traceFile.path);
+        if (!result?.trackData?.trackpoints?.length) {
+          setStatus("Dropped trace file has no trackpoints.");
+          return;
+        }
+        trackData = result.trackData;
+      } catch (err) {
+        setStatus(`Could not read trace: ${err instanceof Error ? err.message : String(err)}`);
         return;
       }
-      trackData = result.trackData;
-    } catch (err) {
-      setStatus(`Could not read trace: ${err instanceof Error ? err.message : String(err)}`);
+      const overlap = checkMediaDateOverlap(mediaLibraryState.items, trackData);
+      showTraceDropModal(viewer, playbackState, trackData, overlap);
       return;
     }
 
-    const overlap = checkMediaDateOverlap(mediaLibraryState.items, trackData);
-    showTraceDropModal(viewer, playbackState, trackData, overlap);
+    // No trace file — check for media files and import them directly.
+    const mediaFiles = getDroppedMediaFiles(e.dataTransfer);
+    if (mediaFiles.length > 0) {
+      await importDroppedMedia(viewer, playbackState, mediaFiles.map((f) => f.path));
+    }
   });
+}
+
+// F-71: import media files supplied by drag-and-drop, reusing the same flow as the import button.
+async function importDroppedMedia(viewer, playbackState, filePaths) {
+  mediaLibraryState.isImporting = true;
+  openSectionDetails("sectionDetailsMedia");
+  mediaLibraryState.progress = {
+    indeterminate: true,
+    label: "Reading metadata and aligning media…",
+    status: "running",
+    value: 10,
+  };
+  updateMediaLibraryUi();
+
+  try {
+    const result = await window.bikeFlyOverApp.importMediaFromPaths(filePaths);
+    if (Array.isArray(result?.mediaItems)) {
+      applyMediaAlignmentToLibrary(
+        playbackState,
+        mergeImportedMedia(mediaLibraryState.items, result.mediaItems),
+      );
+      mediaLibraryState.statusMessage =
+        result.mediaItems.length > 0
+          ? buildMediaLibraryStatusMessage()
+          : "No supported media files were added.";
+      mediaLibraryState.progress = {
+        indeterminate: false,
+        label: result.mediaItems.length > 0 ? "Import complete" : "No supported files",
+        status: result.mediaItems.length > 0 ? "complete" : "idle",
+        value: result.mediaItems.length > 0 ? 100 : 0,
+      };
+      refreshMediaLibraryPresentation(viewer, playbackState);
+    }
+  } catch (error) {
+    mediaLibraryState.statusMessage =
+      error instanceof Error ? error.message : String(error);
+    mediaLibraryState.progress = {
+      indeterminate: false,
+      label: "Import failed",
+      status: "error",
+      value: 100,
+    };
+  } finally {
+    mediaLibraryState.isImporting = false;
+    refreshMediaLibraryPresentation(viewer, playbackState);
+  }
 }
 // end F-71
 

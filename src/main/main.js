@@ -752,6 +752,16 @@ app.whenReady().then(() => {
   });
   // end F-71
 
+  // F-71: import media files from known paths (drag-and-drop — no file picker).
+  ipcMain.handle("media-import-paths", async (_event, filePaths) => {
+    if (!Array.isArray(filePaths) || filePaths.length === 0) {
+      return { cancelled: false, mediaItems: [] };
+    }
+    const mediaItems = await normalizeImportedMediaPaths(filePaths);
+    return { cancelled: false, mediaItems };
+  });
+  // end F-71
+
   // F-71: open a new preview window and pre-seed it with the given trace file path.
   ipcMain.handle("open-with-activity", async (_event, filePath) => {
     const win = new BrowserWindow({
