@@ -2031,6 +2031,7 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
       outlineColor: Cesium.Color.fromCssColorString("#062032"),
       outlineWidth: 2,
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     },
   });
 
@@ -2044,6 +2045,7 @@ function addRouteEntities(viewer, playbackState, sampleTrack) {
       outlineColor: Cesium.Color.fromCssColorString("#062032"),
       outlineWidth: 2,
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     },
   });
 
