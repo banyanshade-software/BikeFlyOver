@@ -3132,7 +3132,11 @@ function addPlaybackEntities(viewer, playbackState) {
       color: Cesium.Color.fromCssColorString("#ffe56a"),
       outlineColor: Cesium.Color.fromCssColorString("#062032"),
       outlineWidth: 3,
+      // Perf: always visible even below terrain (no depth clip).
       disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      // Fix: clamp to terrain surface so the dot stays on the ground regardless of
+      // computed altitude — route lines use clampToGround for the same reason.
+      heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
     },
   });
 
