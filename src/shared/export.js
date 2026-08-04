@@ -51,6 +51,12 @@ const EXPORT_RESOLUTION_PRESETS = [
     height: 1080,
   },
   {
+    id: "square-720",
+    label: "720 x 720 (Square)",
+    width: 720,
+    height: 720,
+  },
+  {
     id: "portrait-360x640",
     label: "360 x 640 (Portrait)",
     width: 360,
