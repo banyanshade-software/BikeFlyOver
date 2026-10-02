@@ -3653,6 +3653,15 @@ function syncPlaybackState(viewer, playbackState, options = {}) {
     void updateMediaPreviewOverlay(playbackState);
   }
 
+  // Drive Cesium's clock from the track time so sun position, lighting and sky match when the
+  // activity was recorded (not when the app is running). The clock itself never animates.
+  if (Number.isFinite(playbackState.currentTimestamp)) {
+    window.Cesium.JulianDate.fromDate(
+      new Date(playbackState.currentTimestamp),
+      viewer.clock.currentTime,
+    );
+  }
+
   // Perf: with requestRenderMode=true Cesium won't render unless asked; explicitly request a frame
   // after every state sync so playback, scrubbing, and camera updates are always reflected.
   viewer.scene.requestRender();
