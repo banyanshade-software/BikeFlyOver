@@ -1950,6 +1950,13 @@ function applyRoutePositionsToEntities(playbackState) {
 async function refreshTerrainRouteGeometry(viewer, playbackState, options = {}) {
   const { resampleHeights = false, updateTimelineState = true } = options;
 
+  // F-71: no track loaded yet (empty startup state) — nothing to rebuild. Without this guard the
+  // route-position helpers throw on the empty trackpoint list, and initializeViewerTerrain's catch
+  // would mark the terrain provider unavailable, flattening terrain on the next settings change.
+  if (playbackState.trackpoints.length === 0) {
+    return;
+  }
+
   if (resampleHeights || playbackState.terrain.sampledHeights.length === 0) {
     await sampleRouteTerrainHeights(viewer, playbackState);
   }
