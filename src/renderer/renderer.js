@@ -5505,8 +5505,15 @@ function applyRendererSettings(viewer, playbackState, settings, options = {}) {
   }
 }
 
+function isExportSessionActive() {
+  return document.body.classList.contains("export-session-active");
+}
+
 function setExportSessionState(viewer, enabled) {
   document.body.classList.toggle("export-session-active", enabled);
+  // Lock user camera input (drag/zoom/tilt) while frames are captured: any interaction would move
+  // the camera between frames and show up as glitches in the video. CSS also blocks pointer events.
+  viewer.scene.screenSpaceCameraController.enableInputs = !enabled;
   setMediaPreviewEntitiesVisibility(!enabled);
   viewer.resize();
 }
@@ -5855,6 +5862,13 @@ function setupTraceDropHandler(viewer, playbackState) {
   // dataTransfer.files is EMPTY during dragover in Electron — only populated on drop.
   // We can't inspect extensions at this point, but we can check dataTransfer.items for kind.
   document.addEventListener("dragover", (e) => {
+    // Refuse drops during export: loading a track or media would disrupt frame capture.
+    // Still preventDefault, otherwise Electron would navigate to the dropped file.
+    if (isExportSessionActive()) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "none";
+      return;
+    }
     const hasFileItems = Array.from(e.dataTransfer.items).some((item) => item.kind === "file");
     if (hasFileItems) {
       e.preventDefault();
@@ -5866,6 +5880,9 @@ function setupTraceDropHandler(viewer, playbackState) {
 
   document.addEventListener("drop", async (e) => {
     e.preventDefault();
+    if (isExportSessionActive()) {
+      return;
+    }
 
     // Trace files take priority: if any trace extension is present, show the confirmation modal.
     const traceFile = getDroppedTraceFile(e.dataTransfer);

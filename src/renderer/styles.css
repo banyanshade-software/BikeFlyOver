@@ -780,6 +780,11 @@ body {
   height: 100vh;
 }
 
+/* No mouse/touch interaction with the scene while an export is capturing frames. */
+.export-session-active .viewer-panel {
+  pointer-events: none;
+}
+
 .export-mode .media-preview-overlay {
   display: none;
 }
