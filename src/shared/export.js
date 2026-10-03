@@ -460,10 +460,15 @@ function getSegmentSpeedMetersPerSecond(
     activityDurationSeconds;
 }
 
+// Adaptive speed: segments at or below this speed are treated as stops/pauses.
+const ADAPTIVE_IDLE_SPEED_THRESHOLD_MPS = 0.75;
+// Adaptive speed: a whole stop/pause (consecutive idle segments) lasts at most this long in the video.
+const ADAPTIVE_STOP_MAX_VIDEO_DURATION_MS = 100;
+
 function getAdaptiveSegmentMultiplier(segmentSpeedMetersPerSecond, settings) {
   const baseMultiplier = settings.speedMultiplier;
   const strength = settings.adaptiveStrength;
-  const idleSpeedThreshold = 0.75;
+  const idleSpeedThreshold = ADAPTIVE_IDLE_SPEED_THRESHOLD_MPS;
   const cruisingSpeedThreshold = 5;
   const fastSpeedThreshold = 12;
   const sprintSpeedThreshold = 20;
@@ -557,6 +562,74 @@ function getSegmentVideoDurationMs(
   }
 
   return activityDurationMs / settings.speedMultiplier;
+}
+
+// Adaptive speed: stops and pauses don't need their real duration in the video. Group consecutive
+// idle segments into one stop and share at most ADAPTIVE_STOP_MAX_VIDEO_DURATION_MS between them,
+// whatever the stop's real length. Returns segment index -> video duration (ms) for idle segments.
+function buildAdaptiveStopVideoDurations(trackpoints, settings) {
+  const stopVideoDurations = new Map();
+  let run = [];
+
+  const flushRun = () => {
+    if (run.length === 0) {
+      return;
+    }
+
+    const totalActivityMs = run.reduce((sum, entry) => sum + entry.activityDurationMs, 0);
+    const totalNaturalVideoMs = run.reduce((sum, entry) => sum + entry.naturalVideoMs, 0);
+    const cappedVideoMs = Math.min(totalNaturalVideoMs, ADAPTIVE_STOP_MAX_VIDEO_DURATION_MS);
+
+    for (const entry of run) {
+      stopVideoDurations.set(
+        entry.index,
+        cappedVideoMs * (entry.activityDurationMs / totalActivityMs),
+      );
+    }
+
+    run = [];
+  };
+
+  for (let index = 0; index < trackpoints.length - 1; index += 1) {
+    const startTrackpoint = trackpoints[index];
+    const endTrackpoint = trackpoints[index + 1];
+    const activityDurationMs = endTrackpoint.timestamp - startTrackpoint.timestamp;
+
+    if (!(activityDurationMs > 0)) {
+      continue;
+    }
+
+    const segmentSpeedMetersPerSecond = getSegmentSpeedMetersPerSecond(
+      startTrackpoint,
+      endTrackpoint,
+      activityDurationMs,
+    );
+    // Sampled speeds at a stop's edges (e.g. 8 m/s before an auto-pause gap) hide the stop, so also
+    // use the distance actually covered over the segment and keep the lower of the two.
+    const distanceSpeedMetersPerSecond =
+      getSegmentDistanceMeters(startTrackpoint, endTrackpoint) / (activityDurationMs / 1000);
+    const stopDetectionSpeed = Math.min(
+      segmentSpeedMetersPerSecond,
+      distanceSpeedMetersPerSecond,
+    );
+
+    if (stopDetectionSpeed > ADAPTIVE_IDLE_SPEED_THRESHOLD_MPS) {
+      flushRun();
+      continue;
+    }
+
+    run.push({
+      activityDurationMs,
+      index,
+      naturalVideoMs:
+        activityDurationMs /
+        getAdaptiveSegmentMultiplier(segmentSpeedMetersPerSecond, settings),
+    });
+  }
+
+  flushRun();
+
+  return stopVideoDurations;
 }
 
 function getTrackSegmentOverlap(segmentStart, segmentEnd, rangeStart, rangeEnd) {
@@ -666,6 +739,10 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
     getTrackAverageSpeedMetersPerSecond(safeTrackpoints) *
       effectiveSettings.speedMultiplier,
   );
+  const adaptiveStopVideoDurations =
+    effectiveSettings.timingMode === "adaptive-speed"
+      ? buildAdaptiveStopVideoDurations(safeTrackpoints, effectiveSettings)
+      : null;
   const sortedMediaItems = (Array.isArray(mediaItems) ? mediaItems : [])
     .filter((item) => Number.isFinite(item?.alignedActivityTimestamp))
     .filter((item) => {
@@ -725,13 +802,15 @@ function buildExportTimeline({ trackpoints, settings, mediaItems = [] }) {
         continue;
       }
 
-      const fullVideoDurationMs = getSegmentVideoDurationMs(
-        startTrackpoint,
-        endTrackpoint,
-        fullActivityDurationMs,
-        effectiveSettings,
-        fixedSpeedMetersPerSecond,
-      );
+      const fullVideoDurationMs =
+        adaptiveStopVideoDurations?.get(trackpointIndex) ??
+        getSegmentVideoDurationMs(
+          startTrackpoint,
+          endTrackpoint,
+          fullActivityDurationMs,
+          effectiveSettings,
+          fixedSpeedMetersPerSecond,
+        );
       const videoDurationMs =
         fullVideoDurationMs * (overlap.overlapDurationMs / fullActivityDurationMs);
 

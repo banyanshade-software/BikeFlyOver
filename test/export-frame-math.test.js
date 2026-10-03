@@ -162,3 +162,46 @@ test("target-duration export timeline produces the requested video length", () =
   );
 });
 // end F-29
+
+test("adaptive-speed export caps each stop or pause at 0.1 s of video", () => {
+  const moving = (timestamp, offset) => ({
+    latitude: 46.1 + offset,
+    longitude: 6.1,
+    speed: 8,
+    timestamp,
+  });
+  const stopped = (timestamp, offset) => ({
+    latitude: 46.1 + offset,
+    longitude: 6.1,
+    speed: 0,
+    timestamp,
+  });
+  const stopTrackpoints = [moving(0, 0), moving(10_000, 0.0007)];
+
+  // 10-minute stop recorded every second.
+  for (let second = 1; second <= 600; second += 1) {
+    stopTrackpoints.push(stopped(10_000 + second * 1_000, 0.0007));
+  }
+
+  stopTrackpoints.push(moving(620_000, 0.0014));
+  // 20-minute auto-pause: no points recorded, same position on resume.
+  stopTrackpoints.push(stopped(1_820_000, 0.0014));
+  stopTrackpoints.push(moving(1_830_000, 0.0021));
+
+  const settings = { adaptiveStrength: 1, speedMultiplier: 10, timingMode: "adaptive-speed" };
+  const exportTimeline = buildExportTimeline({ settings, trackpoints: stopTrackpoints });
+  const stopVideoMs = exportTimeline.segments
+    .filter((segment) => {
+      return (
+        (segment.activityStartTimestamp >= 10_000 && segment.activityEndTimestamp <= 610_000) ||
+        (segment.activityStartTimestamp >= 620_000 && segment.activityEndTimestamp <= 1_820_000)
+      );
+    })
+    .reduce((sum, segment) => sum + segment.videoDurationMs, 0);
+
+  assert.ok(Math.abs(stopVideoMs - 200) < 1e-6, `stops took ${stopVideoMs} ms`);
+  assert.equal(
+    exportTimeline.segments.at(-1).activityEndTimestamp,
+    1_830_000,
+  );
+});
