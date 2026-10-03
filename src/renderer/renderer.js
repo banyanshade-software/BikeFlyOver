@@ -3149,14 +3149,17 @@ function addPlaybackEntities(viewer, playbackState) {
     },
   });
 
-  // Perf: same reason as marker — use a ConstantProperty seeded with the initial played positions.
-  // Positions are rebuilt and reassigned explicitly in updateMarkerPosition each sync cycle.
+  // The played route must stay a dynamic CallbackProperty: a clampToGround polyline driven by a
+  // changing ConstantProperty is treated as static and rebuilt asynchronously on every change, so it
+  // never gets displayed during playback. The dynamic path rebuilds synchronously, and only on frames
+  // that are actually rendered (requestRenderMode still suppresses idle redraws).
   const progressEntity = viewer.entities.add({
     id: "played-route",
     name: "Played route",
     polyline: {
-      positions: new Cesium.ConstantProperty(
-        buildPlayedRoutePositions(Cesium, playbackState),
+      positions: new Cesium.CallbackProperty(
+        () => buildPlayedRoutePositions(Cesium, playbackState),
+        false,
       ),
       width: 40, // width of completed route
       clampToGround: true,
@@ -3172,17 +3175,10 @@ function addPlaybackEntities(viewer, playbackState) {
 }
 
 function updateMarkerPosition(playbackState) {
-  // Perf: push updated position and played-route into the static Cesium properties rather than
-  // using CallbackProperty, so requestRenderMode can suppress idle redraws.
+  // Perf: push the updated position into the static marker property rather than using a
+  // CallbackProperty. The played route reads playback state live (see addPlaybackEntities).
   if (playbackState.markerEntity && playbackState.currentSamplePosition) {
     playbackState.markerEntity.position.setValue(playbackState.currentSamplePosition);
-  }
-
-  if (playbackState.progressEntity) {
-    const Cesium = window.Cesium;
-    playbackState.progressEntity.polyline.positions.setValue(
-      buildPlayedRoutePositions(Cesium, playbackState),
-    );
   }
 }
 
