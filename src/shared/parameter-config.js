@@ -18,12 +18,12 @@ function buildDefaults(definitions) {
   );
 }
 
-// F-72/F-73/F-74: gauge size constants for proportional scaling relative to 1280px reference width
+// F-72/F-73/F-74: reference frame the metric overlay is designed for. In export, the whole overlay is
+// scaled by min(width / referenceWidthPx, height / referenceHeightPx) so it keeps the same proportion
+// of the image at every resolution.
 const GAUGE_SIZE_CONFIG = Object.freeze({
-  referenceGaugePx: 130,
-  gaugeMinPx: 80,
-  gaugeMaxPx: 400,
   referenceWidthPx: 1280,
+  referenceHeightPx: 720,
 });
 // end F-72/F-73/F-74
 

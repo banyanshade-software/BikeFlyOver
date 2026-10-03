@@ -569,9 +569,7 @@ body {
   position: relative;
   display: grid;
   place-items: center;
-  /* F-73: width is set via CSS variable so renderer can scale it proportionally to export resolution */
-  width: var(--overlay-gauge-size, 130px);
-  /* end F-73 */
+  width: 130px;
   aspect-ratio: 1;
   border-radius: 50%;
   /* F-72: speedometer center fill and inactive arc use overlay-bg-alpha */
@@ -784,6 +782,29 @@ body {
 .export-session-active .viewer-panel {
   pointer-events: none;
 }
+
+/* F-73: in export, lay the overlay out as in the 1280x720 reference frame, then scale it uniformly
+   (--overlay-scale is set by the renderer from the export resolution). The narrow-viewport media query
+   must not reflow it at small export sizes. */
+.export-mode .metric-overlay,
+.export-session-active .metric-overlay {
+  zoom: var(--overlay-scale, 1);
+  flex-wrap: nowrap;
+  top: 1.25rem;
+  left: 1.25rem;
+  max-width: none;
+}
+
+.export-mode .metric-overlay__column--primary,
+.export-session-active .metric-overlay__column--primary {
+  min-width: 340px;
+}
+
+.export-mode .metric-overlay__column--secondary,
+.export-session-active .metric-overlay__column--secondary {
+  min-width: 260px;
+}
+/* end F-73 */
 
 .export-mode .media-preview-overlay {
   display: none;

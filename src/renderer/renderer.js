@@ -13,12 +13,10 @@ const DEFAULT_TERRAIN_PROVIDER_LABEL = "ArcGIS World Elevation";
 const DEFAULT_TERRAIN_PROVIDER_URL =
   "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer";
 // end F-69
-// F-73: gauge size constants used to scale the speedometer proportionally to the export resolution
+// F-73: reference frame used to scale the metric overlay proportionally to the export resolution
 const _gaugeSizeCfg = PARAMETER_CONFIG.gaugeSizeConfig || {};
-const OVERLAY_GAUGE_REFERENCE_PX = _gaugeSizeCfg.referenceGaugePx || 130;
-const OVERLAY_GAUGE_MIN_PX = _gaugeSizeCfg.gaugeMinPx || 80;
-const OVERLAY_GAUGE_MAX_PX = _gaugeSizeCfg.gaugeMaxPx || 400;
-const OVERLAY_GAUGE_REFERENCE_WIDTH = _gaugeSizeCfg.referenceWidthPx || 1280;
+const OVERLAY_REFERENCE_WIDTH = _gaugeSizeCfg.referenceWidthPx || 1280;
+const OVERLAY_REFERENCE_HEIGHT = _gaugeSizeCfg.referenceHeightPx || 720;
 // end F-73
 const RENDER_MODE =
   new URLSearchParams(window.location.search).get("mode") === "export"
@@ -5466,22 +5464,21 @@ function applyRendererSettings(viewer, playbackState, settings, options = {}) {
     settings.overlayVisibility,
   );
 
-  // F-73: scale speedometer size proportionally to export width; remove override during preview so CSS default applies
+  // F-73: scale the whole metric overlay (cards, text, gauges) proportionally to the export frame, so it
+  // covers the same share of the image at 400x400 as at 1920x1080. Removed in preview so CSS defaults apply.
   const overlayRoot = document.getElementById("metricOverlay");
   if (overlayRoot instanceof HTMLElement) {
-    if (Number.isFinite(settings.width) && settings.width > 0) {
-      const gaugeSize = Math.round(
-        Math.min(
-          OVERLAY_GAUGE_MAX_PX,
-          Math.max(
-            OVERLAY_GAUGE_MIN_PX,
-            OVERLAY_GAUGE_REFERENCE_PX * (settings.width / OVERLAY_GAUGE_REFERENCE_WIDTH),
-          ),
-        ),
+    if (
+      Number.isFinite(settings.width) && settings.width > 0 &&
+      Number.isFinite(settings.height) && settings.height > 0
+    ) {
+      const overlayScale = Math.min(
+        settings.width / OVERLAY_REFERENCE_WIDTH,
+        settings.height / OVERLAY_REFERENCE_HEIGHT,
       );
-      overlayRoot.style.setProperty("--overlay-gauge-size", `${gaugeSize}px`);
+      overlayRoot.style.setProperty("--overlay-scale", String(overlayScale));
     } else {
-      overlayRoot.style.removeProperty("--overlay-gauge-size");
+      overlayRoot.style.removeProperty("--overlay-scale");
     }
   }
   // end F-73
