@@ -50,7 +50,6 @@ const mediaLibraryState = {
 // F-01: file path of the user-imported activity; null means the app is using the bundled sample track.
 let currentActivityFilePath = null;
 // end F-01
-const TIMELINE_SLIDER_MAX = 1000;
 const ROUTE_DISPLAY_HEIGHT_METERS = 2;
 const OVERLAY_VISIBILITY_DEFAULTS = Object.freeze(
   Object.fromEntries(
@@ -118,16 +117,6 @@ const OVERLAY_COMPONENT_DEFINITIONS = Object.freeze([
     elementId: "mapInsetCanvas",
     // end F-66
   },
-]);
-const TIMELINE_SCRUB_KEYS = new Set([
-  "ArrowLeft",
-  "ArrowRight",
-  "ArrowUp",
-  "ArrowDown",
-  "Home",
-  "End",
-  "PageUp",
-  "PageDown",
 ]);
 
 function setStatus(message) {
@@ -689,82 +678,6 @@ function getPlaybackProgressRatio(playbackState) {
   return clampProgressRatio(
     (playbackState.currentTimestamp - playbackState.startTimestamp) /
       playbackState.durationMs,
-  );
-}
-
-function getFullPlaybackProgressRatio(playbackState, timestamp) {
-  if (playbackState.fullDurationMs <= 0) {
-    return 1;
-  }
-
-  return clampProgressRatio(
-    ((timestamp ?? playbackState.currentTimestamp) -
-      playbackState.fullStartTimestamp) /
-      playbackState.fullDurationMs,
-  );
-}
-
-function progressRatioToTimestamp(playbackState, progressRatio) {
-  if (playbackState.durationMs <= 0) {
-    return playbackState.startTimestamp;
-  }
-
-  return (
-    playbackState.startTimestamp +
-    playbackState.durationMs * clampProgressRatio(progressRatio)
-  );
-}
-
-function fullProgressRatioToTimestamp(playbackState, progressRatio) {
-  if (playbackState.fullDurationMs <= 0) {
-    return playbackState.fullStartTimestamp;
-  }
-
-  return (
-    playbackState.fullStartTimestamp +
-    playbackState.fullDurationMs * clampProgressRatio(progressRatio)
-  );
-}
-
-function sliderValueToTimestamp(playbackState, sliderValue) {
-  return progressRatioToTimestamp(
-    playbackState,
-    Number(sliderValue) / TIMELINE_SLIDER_MAX,
-  );
-}
-
-function fullSliderValueToTimestamp(playbackState, sliderValue) {
-  return fullProgressRatioToTimestamp(
-    playbackState,
-    Number(sliderValue) / TIMELINE_SLIDER_MAX,
-  );
-}
-
-function timestampToSliderValue(playbackState, timestamp) {
-  if (playbackState.durationMs <= 0) {
-    return TIMELINE_SLIDER_MAX;
-  }
-
-  return String(
-    Math.round(
-      TIMELINE_SLIDER_MAX *
-        clampProgressRatio(
-          (timestamp - playbackState.startTimestamp) / playbackState.durationMs,
-        ),
-    ),
-  );
-}
-
-function fullTimestampToSliderValue(playbackState, timestamp) {
-  if (playbackState.fullDurationMs <= 0) {
-    return TIMELINE_SLIDER_MAX;
-  }
-
-  return String(
-    Math.round(
-      TIMELINE_SLIDER_MAX *
-        getFullPlaybackProgressRatio(playbackState, timestamp),
-    ),
   );
 }
 
@@ -3186,28 +3099,15 @@ function updatePlaybackUI(playbackState) {
     setTextContent("playbackStatus", "No activity loaded");
     setPlaybackButtonLabel("Play");
     setElementDisabled("playPauseButton", true);
-    setElementDisabled("timelineSlider", true);
-    setElementDisabled("timelineRangeStartSlider", true);
-    setElementDisabled("timelineRangeEndSlider", true);
+    timelineEditor?.updatePlayhead();
     return;
   }
   // end F-71
   // F-71: re-enable controls that were disabled in the no-track state.
   setElementDisabled("playPauseButton", false);
-  setElementDisabled("timelineSlider", false);
-  setElementDisabled("timelineRangeStartSlider", false);
-  setElementDisabled("timelineRangeEndSlider", false);
   // end F-71
   const elapsedMs = playbackState.currentTimestamp - playbackState.startTimestamp;
   const progressRatio = getPlaybackProgressRatio(playbackState);
-  const timelineSlider = document.getElementById("timelineSlider");
-  const timelineRangeStartSlider = document.getElementById(
-    "timelineRangeStartSlider",
-  );
-  const timelineRangeEndSlider = document.getElementById("timelineRangeEndSlider");
-  const isFullRangeSelected =
-    playbackState.startTimestamp === playbackState.fullStartTimestamp &&
-    playbackState.endTimestamp === playbackState.fullEndTimestamp;
 
   setTextContent("playbackStatus", playbackState.isPlaying ? "Playing" : "Paused");
   setTextContent("playbackProgress", formatProgress(progressRatio));
@@ -3224,43 +3124,8 @@ function updatePlaybackUI(playbackState) {
   setTextContent("playbackSpeed", `${playbackState.speedMultiplier}x track time`);
   setTextContent("timelineElapsed", formatDuration(elapsedMs));
   setTextContent("timelineDuration", formatDuration(playbackState.durationMs));
-  setTextContent(
-    "timelineRangeStartValue",
-    formatDuration(playbackState.startTimestamp - playbackState.fullStartTimestamp),
-  );
-  setTextContent(
-    "timelineRangeEndValue",
-    formatDuration(playbackState.endTimestamp - playbackState.fullStartTimestamp),
-  );
-  setTextContent(
-    "timelineRangeStatus",
-    isFullRangeSelected ? "Full activity" : "Selected range",
-  );
   setPlaybackButtonLabel(playbackState.isPlaying ? "Pause" : "Play");
-
-  if (
-    timelineSlider instanceof HTMLInputElement &&
-    !playbackState.ui.isTimelineInteracting
-  ) {
-    timelineSlider.value = timestampToSliderValue(
-      playbackState,
-      playbackState.currentTimestamp,
-    );
-  }
-
-  if (timelineRangeStartSlider instanceof HTMLInputElement) {
-    timelineRangeStartSlider.value = fullTimestampToSliderValue(
-      playbackState,
-      playbackState.startTimestamp,
-    );
-  }
-
-  if (timelineRangeEndSlider instanceof HTMLInputElement) {
-    timelineRangeEndSlider.value = fullTimestampToSliderValue(
-      playbackState,
-      playbackState.endTimestamp,
-    );
-  }
+  timelineEditor?.updatePlayhead();
 }
 
 // F-66: draw the north-up mini-map on the inset canvas; called from applyOverlayVisibility
@@ -3697,6 +3562,7 @@ function setPlaybackRange(
   resetFollowCameraSmoothing(playbackState);
   syncRouteRangeEntities(playbackState);
   syncPlaybackState(viewer, playbackState, options);
+  timelineEditor?.render();
 }
 
 function stopPlayback(playbackState) {
@@ -3805,13 +3671,17 @@ function beginTimelineInteraction(viewer, playbackState) {
   }
 }
 
-function seekPlaybackFromTimeline(viewer, playbackState, sliderValue) {
-  resetFollowCameraSmoothing(playbackState);
-  setPlaybackTimestamp(
-    viewer,
-    playbackState,
-    sliderValueToTimestamp(playbackState, sliderValue),
-  );
+function togglePlayback(viewer, playbackState) {
+  if (!hasTrack(playbackState)) {
+    return;
+  }
+
+  if (playbackState.isPlaying) {
+    pausePlayback(viewer, playbackState);
+    return;
+  }
+
+  startPlayback(viewer, playbackState);
 }
 
 function endTimelineInteraction(viewer, playbackState) {
@@ -3841,22 +3711,9 @@ function setupPlaybackControls(viewer, playbackState) {
   const playPauseButton = document.getElementById("playPauseButton");
   const restartButton = document.getElementById("restartButton");
   const cameraModeButton = document.getElementById("cameraModeButton");
-  const timelineSlider = document.getElementById("timelineSlider");
-  const timelineRangeStartSlider = document.getElementById(
-    "timelineRangeStartSlider",
-  );
-  const timelineRangeEndSlider = document.getElementById("timelineRangeEndSlider");
-  const resetTimelineRangeButton = document.getElementById(
-    "resetTimelineRangeButton",
-  );
 
   playPauseButton?.addEventListener("click", () => {
-    if (playbackState.isPlaying) {
-      pausePlayback(viewer, playbackState);
-      return;
-    }
-
-    startPlayback(viewer, playbackState);
+    togglePlayback(viewer, playbackState);
   });
 
   restartButton?.addEventListener("click", () => {
@@ -3867,157 +3724,19 @@ function setupPlaybackControls(viewer, playbackState) {
     switchCameraMode(viewer, playbackState);
   });
 
-  if (timelineSlider instanceof HTMLInputElement) {
-    timelineSlider.addEventListener("pointerdown", () => {
-      beginTimelineInteraction(viewer, playbackState);
-    });
+  // Space toggles playback unless the focus is in a form control that uses the key itself.
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.key !== " " ||
+      event.repeat ||
+      isExportSessionActive() ||
+      event.target.closest?.("input, select, textarea, button, summary")
+    ) {
+      return;
+    }
 
-    timelineSlider.addEventListener("pointerup", () => {
-      endTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineSlider.addEventListener("keydown", (event) => {
-      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
-        beginTimelineInteraction(viewer, playbackState);
-      }
-    });
-
-    timelineSlider.addEventListener("keyup", (event) => {
-      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
-        endTimelineInteraction(viewer, playbackState);
-      }
-    });
-
-    timelineSlider.addEventListener("input", (event) => {
-      beginTimelineInteraction(viewer, playbackState);
-      seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
-    });
-
-    timelineSlider.addEventListener("change", (event) => {
-      seekPlaybackFromTimeline(viewer, playbackState, event.target.value);
-      endTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineSlider.addEventListener("blur", () => {
-      endTimelineInteraction(viewer, playbackState);
-    });
-  }
-
-  if (timelineRangeStartSlider instanceof HTMLInputElement) {
-    timelineRangeStartSlider.addEventListener("pointerdown", () => {
-      beginTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineRangeStartSlider.addEventListener("pointerup", () => {
-      endTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineRangeStartSlider.addEventListener("keydown", (event) => {
-      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
-        beginTimelineInteraction(viewer, playbackState);
-      }
-    });
-
-    timelineRangeStartSlider.addEventListener("keyup", (event) => {
-      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
-        endTimelineInteraction(viewer, playbackState);
-      }
-    });
-
-    timelineRangeStartSlider.addEventListener("input", (event) => {
-      beginTimelineInteraction(viewer, playbackState);
-      const nextStartTimestamp = fullSliderValueToTimestamp(
-        playbackState,
-        event.target.value,
-      );
-      setPlaybackRange(
-        viewer,
-        playbackState,
-        nextStartTimestamp,
-        Math.max(nextStartTimestamp, playbackState.endTimestamp),
-      );
-    });
-
-    timelineRangeStartSlider.addEventListener("change", (event) => {
-      const nextStartTimestamp = fullSliderValueToTimestamp(
-        playbackState,
-        event.target.value,
-      );
-      setPlaybackRange(
-        viewer,
-        playbackState,
-        nextStartTimestamp,
-        Math.max(nextStartTimestamp, playbackState.endTimestamp),
-      );
-      endTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineRangeStartSlider.addEventListener("blur", () => {
-      endTimelineInteraction(viewer, playbackState);
-    });
-  }
-
-  if (timelineRangeEndSlider instanceof HTMLInputElement) {
-    timelineRangeEndSlider.addEventListener("pointerdown", () => {
-      beginTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineRangeEndSlider.addEventListener("pointerup", () => {
-      endTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineRangeEndSlider.addEventListener("keydown", (event) => {
-      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
-        beginTimelineInteraction(viewer, playbackState);
-      }
-    });
-
-    timelineRangeEndSlider.addEventListener("keyup", (event) => {
-      if (TIMELINE_SCRUB_KEYS.has(event.key)) {
-        endTimelineInteraction(viewer, playbackState);
-      }
-    });
-
-    timelineRangeEndSlider.addEventListener("input", (event) => {
-      beginTimelineInteraction(viewer, playbackState);
-      const nextEndTimestamp = fullSliderValueToTimestamp(
-        playbackState,
-        event.target.value,
-      );
-      setPlaybackRange(
-        viewer,
-        playbackState,
-        Math.min(playbackState.startTimestamp, nextEndTimestamp),
-        nextEndTimestamp,
-      );
-    });
-
-    timelineRangeEndSlider.addEventListener("change", (event) => {
-      const nextEndTimestamp = fullSliderValueToTimestamp(
-        playbackState,
-        event.target.value,
-      );
-      setPlaybackRange(
-        viewer,
-        playbackState,
-        Math.min(playbackState.startTimestamp, nextEndTimestamp),
-        nextEndTimestamp,
-      );
-      endTimelineInteraction(viewer, playbackState);
-    });
-
-    timelineRangeEndSlider.addEventListener("blur", () => {
-      endTimelineInteraction(viewer, playbackState);
-    });
-  }
-
-  resetTimelineRangeButton?.addEventListener("click", () => {
-    setPlaybackRange(
-      viewer,
-      playbackState,
-      playbackState.fullStartTimestamp,
-      playbackState.fullEndTimestamp,
-    );
+    event.preventDefault();
+    togglePlayback(viewer, playbackState);
   });
 }
 
@@ -4068,8 +3787,58 @@ function applyParameterInputAttributes() {
 }
 
 // F-15: re-render the list of camera moves in the sidebar.
+// Timeline editor: selection shared by the timeline widget and the Camera Moves inspector.
+let timelineEditor = null;
+const timelineUiState = {
+  selectedMoveId: null,
+  selectedMediaId: null,
+};
+const CAMERA_MOVE_TYPE_LABELS = Object.freeze({
+  orbit: "Orbit",
+  lookAt: "Look-at",
+  cinematic: "Cinematic sweep",
+});
+
+function formatClockTime(timestamp) {
+  return Number.isFinite(timestamp) ? new Date(timestamp).toLocaleTimeString() : "";
+}
+
+function formatTrackOffset(playbackState, timestamp) {
+  return formatDuration(timestamp - playbackState.fullStartTimestamp);
+}
+
+function getSelectedCameraMove(playbackState) {
+  return (
+    playbackState.cameraMoves.find((move) => move.id === timelineUiState.selectedMoveId) ??
+    null
+  );
+}
+
+function setCameraMoveInputValue(elementId, value) {
+  const element = document.getElementById(elementId);
+
+  if (element instanceof HTMLInputElement || element instanceof HTMLSelectElement) {
+    element.value = String(value);
+  }
+}
+
+function readCameraMoveNumber(elementId) {
+  const value = parseFloat(document.getElementById(elementId)?.value);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+// F-15: the Camera Moves section is now an inspector: list of moves + editor for the move
+// selected on the timeline (or in the list).
 function renderCameraMovesList(playbackState) {
   const listEl = document.getElementById("cameraMovesList");
+
+  if (!getSelectedCameraMove(playbackState)) {
+    timelineUiState.selectedMoveId = null;
+  }
+
+  syncCameraMoveEditor(playbackState);
+  timelineEditor?.render();
+
   if (!(listEl instanceof HTMLElement)) return;
 
   const moves = playbackState.cameraMoves;
@@ -4078,27 +3847,18 @@ function renderCameraMovesList(playbackState) {
     return;
   }
 
-  const totalDuration = playbackState.durationMs || 1;
   listEl.innerHTML = moves
     .map((move) => {
-      const relSec = ((move.triggerTimestamp - playbackState.startTimestamp) / 1000).toFixed(1);
-      const typeLabel = { orbit: "Orbit", lookAt: "Look-at", cinematic: "Cinematic" }[move.type] || move.type;
-      return `<div class="camera-move-row" data-move-id="${move.id}">
+      const typeLabel = CAMERA_MOVE_TYPE_LABELS[move.type] || move.type;
+      const selected = move.id === timelineUiState.selectedMoveId ? " camera-move-row--selected" : "";
+      return `<div class="camera-move-row${selected}" data-move-id="${move.id}" title="Select and jump to this move">
         <span class="camera-move-type">${typeLabel}</span>
-        <span class="camera-move-time">@${relSec}s</span>
+        <span class="camera-move-time">@${formatTrackOffset(playbackState, move.triggerTimestamp)}</span>
         <span class="camera-move-duration">${move.durationSeconds}s</span>
         <button type="button" class="camera-move-delete" data-move-id="${move.id}" title="Delete move">✕</button>
       </div>`;
     })
     .join("");
-
-  listEl.querySelectorAll(".camera-move-delete").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const id = btn.dataset.moveId;
-      playbackState.cameraMoves = playbackState.cameraMoves.filter((m) => m.id !== id);
-      renderCameraMovesList(playbackState);
-    });
-  });
 }
 
 // F-15: show/hide type-specific parameter panels based on the selected move type.
@@ -4110,79 +3870,357 @@ function syncCameraMoveParamVisibility() {
   if (orbitEl) orbitEl.hidden = type !== "orbit";
   if (lookAtEl) lookAtEl.hidden = type !== "lookAt";
   if (cinematicEl) cinematicEl.hidden = type !== "cinematic";
+}
 
-  const durationInput = document.getElementById("cameraMoveDurationInput");
-  if (durationInput instanceof HTMLInputElement) {
-    const defaults = { orbit: 6, lookAt: 4, cinematic: 5 };
-    if (!durationInput._userEdited) {
-      durationInput.value = String(defaults[type] ?? 6);
+function syncCameraMoveEditor(playbackState) {
+  const move = getSelectedCameraMove(playbackState);
+  setElementHidden("cameraMoveEditor", !move);
+  setElementHidden("cameraMoveEmptyHint", Boolean(move));
+
+  if (!move) {
+    return;
+  }
+
+  setTextContent(
+    "cameraMoveEditorTitle",
+    `${CAMERA_MOVE_TYPE_LABELS[move.type] || move.type} at ${formatTrackOffset(playbackState, move.triggerTimestamp)} (${formatClockTime(move.triggerTimestamp)})`,
+  );
+
+  // Do not overwrite the field the user is typing in.
+  const focused = document.activeElement;
+  const setIfNotFocused = (elementId, value) => {
+    if (focused?.id !== elementId) {
+      setCameraMoveInputValue(elementId, value);
     }
+  };
+
+  setIfNotFocused("cameraMoveTypeSelect", move.type);
+  setIfNotFocused("cameraMoveDurationInput", move.durationSeconds);
+
+  if (move.type === "orbit") {
+    setIfNotFocused("cameraMoveOrbitRadiusInput", move.orbitRadiusMeters);
+    setIfNotFocused("cameraMoveOrbitAltInput", move.orbitAltitudeOffsetMeters);
+    setIfNotFocused("cameraMoveOrbitSpeedInput", move.orbitAngularSpeedDegPerSec);
+  } else if (move.type === "lookAt") {
+    setIfNotFocused("cameraMoveLookAtAltInput", move.lookAtAltitudeOffsetMeters);
+    setIfNotFocused("cameraMoveLookAtRadiusInput", move.lookAtCameraRadiusMeters);
+  } else if (move.type === "cinematic") {
+    setIfNotFocused("cameraMoveCinematicEndOffsetInput", move.cinematicEndOffsetSeconds);
+    setIfNotFocused("cameraMoveCinematicAltInput", move.cinematicAltitudeMultiplier);
+  }
+
+  syncCameraMoveParamVisibility();
+}
+
+function normalizeCameraMoveForRenderer(rawMove) {
+  return window.bikeFlyOverApp?.normalizeCameraMove?.(rawMove) ?? null;
+}
+
+// Re-render everything that shows camera moves, and refresh the paused preview so the edited
+// move is visible immediately.
+function commitCameraMoves(viewer, playbackState, nextMoves) {
+  playbackState.cameraMoves = nextMoves
+    .filter(Boolean)
+    .sort((a, b) => a.triggerTimestamp - b.triggerTimestamp);
+  renderCameraMovesList(playbackState);
+
+  if (!playbackState.isPlaying && hasTrack(playbackState)) {
+    syncPlaybackState(viewer, playbackState);
   }
 }
 
-// F-15: wire up the Camera Moves section controls.
-function setupCameraMovesControls(viewer, playbackState) {
-  const typeSelect = document.getElementById("cameraMoveTypeSelect");
-  const addButton = document.getElementById("addCameraMoveButton");
-  const durationInput = document.getElementById("cameraMoveDurationInput");
+function replaceCameraMove(viewer, playbackState, moveId, rawMove) {
+  const normalized = normalizeCameraMoveForRenderer({ ...rawMove, id: moveId });
 
-  syncCameraMoveParamVisibility();
+  if (!normalized) {
+    return;
+  }
+
+  commitCameraMoves(
+    viewer,
+    playbackState,
+    playbackState.cameraMoves.map((move) => (move.id === moveId ? normalized : move)),
+  );
+}
+
+function selectCameraMove(playbackState, moveId) {
+  timelineUiState.selectedMoveId = moveId;
+
+  if (moveId) {
+    timelineUiState.selectedMediaId = null;
+    openSectionDetails("sectionDetailsCameraMoves");
+  }
+
+  renderCameraMovesList(playbackState);
+}
+
+function addCameraMove(viewer, playbackState, type, timestamp) {
+  if (!hasTrack(playbackState) || !Number.isFinite(timestamp)) {
+    return;
+  }
+
+  const move = normalizeCameraMoveForRenderer({
+    id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    triggerTimestamp: timestamp,
+  });
+
+  if (!move) {
+    return;
+  }
+
+  timelineUiState.selectedMoveId = move.id;
+  timelineUiState.selectedMediaId = null;
+  openSectionDetails("sectionDetailsCameraMoves");
+  commitCameraMoves(viewer, playbackState, [...playbackState.cameraMoves, move]);
+}
+
+function deleteCameraMove(viewer, playbackState, moveId) {
+  if (timelineUiState.selectedMoveId === moveId) {
+    timelineUiState.selectedMoveId = null;
+  }
+
+  commitCameraMoves(
+    viewer,
+    playbackState,
+    playbackState.cameraMoves.filter((move) => move.id !== moveId),
+  );
+}
+
+// F-15: wire up the Camera Moves inspector.
+function setupCameraMovesControls(viewer, playbackState) {
+  const editor = document.getElementById("cameraMoveEditor");
+  const typeSelect = document.getElementById("cameraMoveTypeSelect");
+  const listEl = document.getElementById("cameraMovesList");
+
   renderCameraMovesList(playbackState);
 
   typeSelect?.addEventListener("change", () => {
-    syncCameraMoveParamVisibility();
-  });
+    const move = getSelectedCameraMove(playbackState);
 
-  if (durationInput instanceof HTMLInputElement) {
-    durationInput.addEventListener("input", () => {
-      durationInput._userEdited = true;
-    });
-  }
-
-  addButton?.addEventListener("click", () => {
-    const type = typeSelect instanceof HTMLSelectElement ? typeSelect.value : "orbit";
-    const duration = Math.max(
-      1,
-      parseFloat(document.getElementById("cameraMoveDurationInput")?.value) || 6,
-    );
-
-    const rawMove = {
-      id: `${type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      type,
-      triggerTimestamp: playbackState.currentTimestamp,
-      durationSeconds: duration,
-    };
-
-    if (type === "orbit") {
-      rawMove.orbitRadiusMeters =
-        parseFloat(document.getElementById("cameraMoveOrbitRadiusInput")?.value) || 150;
-      rawMove.orbitAltitudeOffsetMeters =
-        parseFloat(document.getElementById("cameraMoveOrbitAltInput")?.value) || 80;
-      rawMove.orbitAngularSpeedDegPerSec =
-        parseFloat(document.getElementById("cameraMoveOrbitSpeedInput")?.value) || 45;
-    } else if (type === "lookAt") {
-      rawMove.lookAtAltitudeOffsetMeters =
-        parseFloat(document.getElementById("cameraMoveLookAtAltInput")?.value) || 300;
-      rawMove.lookAtCameraRadiusMeters =
-        parseFloat(document.getElementById("cameraMoveLookAtRadiusInput")?.value) || 400;
-    } else if (type === "cinematic") {
-      rawMove.cinematicEndOffsetSeconds =
-        parseFloat(document.getElementById("cameraMoveCinematicEndOffsetInput")?.value) || 30;
-      rawMove.cinematicAltitudeMultiplier =
-        parseFloat(document.getElementById("cameraMoveCinematicAltInput")?.value) || 3;
+    if (!move) {
+      return;
     }
 
-    // Normalise and insert, keeping list sorted.
-    const normalised = window.bikeFlyOverApp?.normalizeCameraMove?.(rawMove) ?? rawMove;
-    if (normalised) {
-      playbackState.cameraMoves = [...playbackState.cameraMoves, normalised].sort(
-        (a, b) => a.triggerTimestamp - b.triggerTimestamp,
-      );
-      renderCameraMovesList(playbackState);
+    // Changing the type starts from that type's defaults, keeping the start time.
+    replaceCameraMove(viewer, playbackState, move.id, {
+      type: typeSelect.value,
+      triggerTimestamp: move.triggerTimestamp,
+    });
+  });
+
+  editor?.addEventListener("input", (event) => {
+    const move = getSelectedCameraMove(playbackState);
+
+    if (!move || !(event.target instanceof HTMLInputElement)) {
+      return;
+    }
+
+    replaceCameraMove(viewer, playbackState, move.id, {
+      ...move,
+      durationSeconds: readCameraMoveNumber("cameraMoveDurationInput"),
+      orbitRadiusMeters: readCameraMoveNumber("cameraMoveOrbitRadiusInput"),
+      orbitAltitudeOffsetMeters: readCameraMoveNumber("cameraMoveOrbitAltInput"),
+      orbitAngularSpeedDegPerSec: readCameraMoveNumber("cameraMoveOrbitSpeedInput"),
+      lookAtAltitudeOffsetMeters: readCameraMoveNumber("cameraMoveLookAtAltInput"),
+      lookAtCameraRadiusMeters: readCameraMoveNumber("cameraMoveLookAtRadiusInput"),
+      cinematicEndOffsetSeconds: readCameraMoveNumber("cameraMoveCinematicEndOffsetInput"),
+      cinematicAltitudeMultiplier: readCameraMoveNumber("cameraMoveCinematicAltInput"),
+    });
+  });
+
+  document.getElementById("deleteCameraMoveButton")?.addEventListener("click", () => {
+    if (timelineUiState.selectedMoveId) {
+      deleteCameraMove(viewer, playbackState, timelineUiState.selectedMoveId);
+    }
+  });
+
+  document.getElementById("deselectCameraMoveButton")?.addEventListener("click", () => {
+    selectCameraMove(playbackState, null);
+  });
+
+  listEl?.addEventListener("click", (event) => {
+    const deleteButton = event.target.closest(".camera-move-delete");
+
+    if (deleteButton) {
+      deleteCameraMove(viewer, playbackState, deleteButton.dataset.moveId);
+      return;
+    }
+
+    const row = event.target.closest(".camera-move-row");
+    const move = playbackState.cameraMoves.find((candidate) => candidate.id === row?.dataset.moveId);
+
+    if (move) {
+      selectCameraMove(playbackState, move.id);
+      resetFollowCameraSmoothing(playbackState);
+      setPlaybackTimestamp(viewer, playbackState, move.triggerTimestamp);
     }
   });
 }
 // end F-15
+
+// Timeline editor: everything the widget displays, derived from playback + media state.
+function buildTimelineModel(playbackState) {
+  const trackLoaded = hasTrack(playbackState);
+  const { fullStartTimestamp, fullEndTimestamp } = playbackState;
+  const settings = readMediaPresentationSettings();
+  const media = [];
+  let missingMediaCount = 0;
+
+  for (const item of mediaLibraryState.items) {
+    const timestamp = item.adjustedCapturedAtTimestamp;
+
+    if (!Number.isFinite(timestamp)) {
+      missingMediaCount += 1;
+      continue;
+    }
+
+    const presentation = getMediaPresentationTimeline(
+      { ...item, alignedActivityTimestamp: timestamp },
+      settings,
+    );
+    const durationMs = presentation?.totalDurationMs || settings.photoDisplayDurationMs;
+    const start = Math.min(fullEndTimestamp, Math.max(fullStartTimestamp, timestamp));
+    const outOfRange =
+      item.alignmentStatus === "before-start" || item.alignmentStatus === "after-end"
+        ? item.alignmentStatus
+        : null;
+    const offsetSeconds = item.appliedAlignmentOffsetSeconds ?? 0;
+
+    media.push({
+      id: item.id,
+      kind: item.mediaType,
+      label: item.fileName,
+      thumbUrl: item.mediaType === "image" ? item.previewUrl : "",
+      start,
+      end: start + durationMs,
+      outOfRange,
+      offsetSeconds,
+      tooltip: [
+        item.fileName,
+        `${formatTimestamp(timestamp)}${offsetSeconds !== 0 ? ` (offset ${formatSignedOffsetSeconds(offsetSeconds)}, ${item.appliedAlignmentOffsetSource})` : ""}`,
+        outOfRange ? formatMediaAlignmentStatus(item.alignmentStatus) : null,
+        "Drag to adjust its time · double-click to reset the per-media offset",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    });
+  }
+
+  return {
+    hasTrack: trackLoaded,
+    disabled: exportUiState.isExporting || isExportSessionActive(),
+    trackpoints: playbackState.trackpoints,
+    fullStart: fullStartTimestamp,
+    fullEnd: fullEndTimestamp,
+    rangeStart: playbackState.startTimestamp,
+    rangeEnd: playbackState.endTimestamp,
+    current: playbackState.currentTimestamp,
+    isPlaying: playbackState.isPlaying,
+    wallClockLabel: trackLoaded ? formatClockTime(playbackState.currentTimestamp) : "",
+    media,
+    missingMediaCount,
+    activeMediaId: mediaLibraryState.activePreviewItemId,
+    selectedMediaId: timelineUiState.selectedMediaId,
+    moves: playbackState.cameraMoves.map((move) => ({
+      id: move.id,
+      type: move.type,
+      start: move.triggerTimestamp,
+      end: move.triggerTimestamp + move.durationSeconds * 1000,
+    })),
+    selectedMoveId: timelineUiState.selectedMoveId,
+  };
+}
+
+function setupTimelineEditor(viewer, playbackState) {
+  const root = document.getElementById("timelinePanel");
+
+  if (!(root instanceof HTMLElement) || typeof window.createTimelineEditor !== "function") {
+    return;
+  }
+
+  const seek = (timestamp) => {
+    resetFollowCameraSmoothing(playbackState);
+    setPlaybackTimestamp(viewer, playbackState, timestamp);
+  };
+
+  timelineEditor = window.createTimelineEditor({
+    root,
+    layout: window.BikeFlyOverTimelineLayout,
+    getModel: () => buildTimelineModel(playbackState),
+    getPlayheadState: () => ({
+      current: playbackState.currentTimestamp,
+      isPlaying: playbackState.isPlaying,
+      wallClockLabel: hasTrack(playbackState)
+        ? formatClockTime(playbackState.currentTimestamp)
+        : "",
+      activeMediaId: mediaLibraryState.activePreviewItemId,
+    }),
+    callbacks: {
+      formatClock: formatClockTime,
+      onTogglePlay: () => togglePlayback(viewer, playbackState),
+      onScrubStart: () => beginTimelineInteraction(viewer, playbackState),
+      onScrub: seek,
+      onScrubEnd: () => endTimelineInteraction(viewer, playbackState),
+      onSeek: seek,
+      onRangeChange: (start, end) => setPlaybackRange(viewer, playbackState, start, end),
+      onRangeReset: () =>
+        setPlaybackRange(
+          viewer,
+          playbackState,
+          playbackState.fullStartTimestamp,
+          playbackState.fullEndTimestamp,
+        ),
+      onMediaSelect: (mediaId) => {
+        timelineUiState.selectedMediaId = mediaId;
+        timelineUiState.selectedMoveId = null;
+        renderCameraMovesList(playbackState);
+      },
+      onMediaCommit: (mediaId, timestamp) => {
+        const item = mediaLibraryState.items.find((candidate) => candidate.id === mediaId);
+        const offsetSeconds = window.bikeFlyOverApp?.computeMediaOffsetSecondsForTimestamp?.(
+          item,
+          timestamp,
+          mediaLibraryState.alignmentOffsets,
+        );
+
+        if (!item || !Number.isFinite(offsetSeconds)) {
+          return;
+        }
+
+        updateMediaOffset(mediaId, offsetSeconds);
+        applyMediaAlignmentToLibrary(playbackState);
+        refreshMediaLibraryPresentation(viewer, playbackState);
+      },
+      onMediaReset: (mediaId) => {
+        updateMediaOffset(mediaId, 0);
+        applyMediaAlignmentToLibrary(playbackState);
+        refreshMediaLibraryPresentation(viewer, playbackState);
+      },
+      onMoveSelect: (moveId) => selectCameraMove(playbackState, moveId),
+      onMoveAdd: (type, timestamp) => addCameraMove(viewer, playbackState, type, timestamp),
+      onMoveDelete: (moveId) => deleteCameraMove(viewer, playbackState, moveId),
+      onMoveCommit: (moveId, { start, durationMs }) => {
+        const move = playbackState.cameraMoves.find((candidate) => candidate.id === moveId);
+
+        if (move) {
+          replaceCameraMove(viewer, playbackState, moveId, {
+            ...move,
+            triggerTimestamp: start,
+            durationSeconds: Math.round(durationMs / 100) / 10,
+          });
+        }
+      },
+    },
+  });
+
+  // Photo hold duration changes the width of photo blocks.
+  document
+    .getElementById("photoDisplayDurationInput")
+    ?.addEventListener("change", () => timelineEditor?.render());
+  timelineEditor.render();
+}
+// end Timeline editor
 
 // F-69: wire the terrain exaggeration control so terrain relief and grounded route geometry update together.
 function setupTerrainControls(viewer, playbackState) {
@@ -4711,6 +4749,7 @@ function applyMediaAlignmentToLibrary(playbackState, mediaItems = mediaLibrarySt
 function refreshMediaLibraryPresentation(viewer, playbackState) {
   syncMediaAlignmentControls();
   updateMediaLibraryUi();
+  timelineEditor?.render();
   syncMediaPreviewEntities(viewer, playbackState);
   if (playbackState) {
     void updateMediaPreviewOverlay(playbackState);
@@ -4858,9 +4897,13 @@ function updateExportUi(statusUpdate) {
     getExportProgressState(statusUpdate),
   );
 
+  const wasExporting = exportUiState.isExporting;
   exportUiState.isExporting = ["starting", "running", "encoding"].includes(
     statusUpdate.status,
   );
+  if (wasExporting !== exportUiState.isExporting) {
+    timelineEditor?.render();
+  }
   // F-38: auto-open the export section so progress is visible even if the user had collapsed it.
   if (exportUiState.isExporting) {
     openSectionDetails("sectionDetailsExport");
@@ -5064,6 +5107,11 @@ function reloadTrack(viewer, playbackState, newTrackData) {
   setElementDisabled("startExportButton", false);
   // end F-71
 
+  // Camera moves belong to the previous track (createPlaybackState reset them).
+  timelineUiState.selectedMoveId = null;
+  timelineUiState.selectedMediaId = null;
+  renderCameraMovesList(playbackState);
+
   applyMediaAlignmentToLibrary(playbackState);
   refreshMediaLibraryPresentation(viewer, playbackState);
 
@@ -5147,6 +5195,8 @@ function restoreProjectState(viewer, playbackState, loadResult) {
     if (!saved) return item;
     return {
       ...item,
+      // Keep the saved id: per-media offsets (timeline drags) are keyed by it.
+      id: saved.id ?? item.id,
       alignedActivityTimestamp: saved.alignedActivityTimestamp,
       alignmentStatus: saved.alignmentStatus,
     };
@@ -5508,6 +5558,7 @@ function setExportSessionState(viewer, enabled) {
   // the camera between frames and show up as glitches in the video. CSS also blocks pointer events.
   viewer.scene.screenSpaceCameraController.enableInputs = !enabled;
   setMediaPreviewEntitiesVisibility(!enabled);
+  timelineEditor?.render();
   viewer.resize();
 }
 
@@ -5993,6 +6044,8 @@ async function initializeApp() {
     window.playbackState = playbackState;
 
     if (RENDER_MODE === "preview") {
+      // Builds the timeline DOM (incl. timelineElapsed/timelineDuration) before the first UI update.
+      setupTimelineEditor(viewer, playbackState);
       applyParameterInputAttributes();
       updatePlaybackUI(playbackState);
       updateCameraUI(playbackState);

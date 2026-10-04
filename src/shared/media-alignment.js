@@ -85,6 +85,30 @@ function getMediaAlignmentOffsetForItem(item, rawOffsets = {}) {
   };
 }
 
+// Timeline drag: per-media offset (seconds) that places the item at targetTimestamp.
+// A per-media offset of exactly 0 means "unset" (the camera offset then applies), so when the
+// item must land on its raw EXIF time while its camera has a non-zero offset, return 1 ms instead.
+function computeMediaOffsetSecondsForTimestamp(item, targetTimestamp, rawOffsets = {}) {
+  if (!Number.isFinite(item?.capturedAtTimestamp) || !Number.isFinite(targetTimestamp)) {
+    return null;
+  }
+
+  const offsetSeconds = normalizeMediaAlignmentOffsetValue(
+    Math.round((targetTimestamp - item.capturedAtTimestamp) / 1000),
+  );
+
+  if (offsetSeconds !== 0) {
+    return offsetSeconds;
+  }
+
+  const cameraOffset = getMediaAlignmentOffsetForItem(
+    { cameraIdentityId: item.cameraIdentityId },
+    rawOffsets,
+  );
+
+  return cameraOffset.offsetSeconds !== 0 ? 0.001 : 0;
+}
+
 function getMediaAlignmentOffsetMs(item, rawOffsets = {}) {
   return Math.round(
     getMediaAlignmentOffsetForItem(item, rawOffsets).offsetSeconds * 1000,
@@ -232,6 +256,7 @@ module.exports = {
   MEDIA_ALIGNMENT_OFFSET_FIELDS,
   applyMediaAlignmentOffsets,
   alignMediaItemsToTrack,
+  computeMediaOffsetSecondsForTimestamp,
   alignMediaItemToTrack,
   findNearestTrackIndex,
   getMediaAlignmentOffsetForItem,

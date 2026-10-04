@@ -4,6 +4,7 @@ const {
   MEDIA_ALIGNMENT_OFFSET_DEFAULTS,
   MEDIA_ALIGNMENT_OFFSET_FIELDS,
   alignMediaItemsToTrack: alignMediaItemsToTrackShared,
+  computeMediaOffsetSecondsForTimestamp: computeMediaOffsetSecondsForTimestampShared,
   normalizeMediaAlignmentOffsets: normalizeMediaAlignmentOffsetsShared,
 } = require("../shared/media-alignment");
 // F-71: loadSampleTrack removed — the app no longer loads a bundled default track on startup.
@@ -61,6 +62,10 @@ contextBridge.exposeInMainWorld("bikeFlyOverApp", {
   },
   normalizeMediaAlignmentOffsets(offsets) {
     return normalizeMediaAlignmentOffsetsShared(offsets);
+  },
+  // Timeline: per-media offset that moves a media item to a given activity timestamp.
+  computeMediaOffsetSecondsForTimestamp(item, targetTimestamp, offsets) {
+    return computeMediaOffsetSecondsForTimestampShared(item, targetTimestamp, offsets);
   },
   // end F-21
   // F-15: expose camera-move normaliser so the renderer can validate moves before adding them.
