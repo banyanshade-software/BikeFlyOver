@@ -755,6 +755,46 @@ body {
 }
 /* end F-66 */
 
+/* Adaptive overlay layout: data-layout and the tile column count are set by applyOverlayLayout from
+   the frame's orientation, its size and the number of visible tiles. Overrides the narrow-viewport
+   media query so preview and export use the same arrangement. */
+.metric-overlay[data-layout] {
+  flex-wrap: nowrap;
+  max-width: none;
+  align-items: flex-start;
+}
+
+.metric-overlay[data-layout="landscape"] {
+  top: 1.25rem;
+  left: 1.25rem;
+  flex-direction: row;
+}
+
+.metric-overlay[data-layout="portrait"] {
+  inset: 1.25rem;
+  /* Keep the bottom-left gauges above Cesium's (unscaled) credit bar; divided by the zoom factor so
+     the clearance stays ~44 screen px whatever the export scale. */
+  bottom: calc(44px / var(--overlay-scale, 1));
+  flex-direction: column;
+}
+
+/* Portrait/square: tiles as a band at the top, gauges pushed to the bottom-left corner. */
+.metric-overlay[data-layout="portrait"] .metric-overlay__column--secondary {
+  margin-top: auto;
+}
+
+.metric-overlay[data-layout] .metric-overlay__column--primary {
+  min-width: 0;
+}
+
+.metric-overlay[data-layout] .metric-overlay__column--secondary {
+  min-width: 260px;
+}
+
+.metric-overlay[data-layout] .metric-tile-grid {
+  grid-template-columns: repeat(var(--metric-tile-columns, 2), minmax(150px, 1fr));
+}
+
 .export-mode .app-header,
 .export-mode .summary-panel,
 .export-session-active .app-header,
@@ -787,22 +827,15 @@ body {
    (--overlay-scale is set by the renderer from the export resolution). The narrow-viewport media query
    must not reflow it at small export sizes. */
 .export-mode .metric-overlay,
-.export-session-active .metric-overlay {
+.export-session-active .metric-overlay,
+.export-mode .map-inset-canvas,
+.export-session-active .map-inset-canvas {
   zoom: var(--overlay-scale, 1);
-  flex-wrap: nowrap;
-  top: 1.25rem;
-  left: 1.25rem;
-  max-width: none;
 }
 
-.export-mode .metric-overlay__column--primary,
-.export-session-active .metric-overlay__column--primary {
-  min-width: 340px;
-}
-
-.export-mode .metric-overlay__column--secondary,
-.export-session-active .metric-overlay__column--secondary {
-  min-width: 260px;
+.export-mode .map-inset-canvas,
+.export-session-active .map-inset-canvas {
+  width: 170px;
 }
 /* end F-73 */
 
