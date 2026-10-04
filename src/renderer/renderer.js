@@ -460,6 +460,74 @@ function syncOverlayControls(playbackState) {
   }
 }
 
+// Adaptive overlay layout (see .metric-overlay[data-layout] in styles.css). Sizes are in the overlay's
+// reference px (before the export zoom): they must match the CSS values.
+const OVERLAY_LANDSCAPE_MIN_ASPECT = 1.2;
+const OVERLAY_EDGE_MARGIN_PX = 20;
+const OVERLAY_GAP_PX = 12;
+const OVERLAY_TILE_MIN_WIDTH_PX = 150;
+const OVERLAY_SECONDARY_COLUMN_WIDTH_PX = 260;
+// In landscape the tile block stays on the left part of the frame.
+const OVERLAY_LANDSCAPE_TILE_WIDTH_SHARE = 0.5;
+
+function applyOverlayLayout() {
+  const overlayRoot = document.getElementById("metricOverlay");
+  const tileGrid = document.getElementById("metricOverlayMetricTiles");
+  const frame = overlayRoot?.parentElement;
+
+  if (!(overlayRoot instanceof HTMLElement) || !(tileGrid instanceof HTMLElement) || !frame) {
+    return;
+  }
+
+  const frameWidth = frame.clientWidth;
+  const frameHeight = frame.clientHeight;
+
+  if (frameWidth <= 0 || frameHeight <= 0) {
+    return;
+  }
+
+  // --overlay-scale is only set (and only applied, via CSS zoom) during export.
+  const overlayScale =
+    Number(document.documentElement.style.getPropertyValue("--overlay-scale")) || 1;
+  const layout =
+    frameWidth / frameHeight >= OVERLAY_LANDSCAPE_MIN_ASPECT ? "landscape" : "portrait";
+  const secondaryColumn = document.getElementById("metricOverlaySecondaryColumn");
+  const secondaryVisible = secondaryColumn instanceof HTMLElement && !secondaryColumn.hidden;
+  const visibleTiles = Array.from(tileGrid.children).filter((tile) => !tile.hidden);
+  const tileCount = visibleTiles.length;
+
+  let availableTileWidth = frameWidth / overlayScale - 2 * OVERLAY_EDGE_MARGIN_PX;
+  if (layout === "landscape") {
+    availableTileWidth *= OVERLAY_LANDSCAPE_TILE_WIDTH_SHARE;
+    if (secondaryVisible) {
+      availableTileWidth = Math.min(
+        availableTileWidth,
+        frameWidth / overlayScale -
+          2 * OVERLAY_EDGE_MARGIN_PX -
+          OVERLAY_SECONDARY_COLUMN_WIDTH_PX -
+          OVERLAY_GAP_PX,
+      );
+    }
+  }
+
+  const maxColumnsForWidth = Math.floor(
+    (availableTileWidth + OVERLAY_GAP_PX) / (OVERLAY_TILE_MIN_WIDTH_PX + OVERLAY_GAP_PX),
+  );
+  // Landscape: compact block of 2 columns. Portrait/square: horizontal band (one row up to 4 tiles).
+  const preferredColumns = layout === "landscape" ? 2 : tileCount <= 4 ? tileCount : 3;
+  const columns = Math.max(1, Math.min(preferredColumns, maxColumnsForWidth, tileCount));
+
+  overlayRoot.dataset.layout = layout;
+  tileGrid.style.setProperty("--metric-tile-columns", String(columns));
+
+  // No orphan cell: the last tile stretches over the empty columns of an incomplete last row.
+  const remainder = tileCount % columns;
+  visibleTiles.forEach((tile, index) => {
+    tile.style.gridColumn =
+      remainder > 0 && index === tileCount - 1 ? `span ${columns - remainder + 1}` : "";
+  });
+}
+
 function applyOverlayVisibility(playbackState) {
   const overlayVisibility = normalizeOverlayVisibilityState(
     playbackState.ui.overlayVisibility,
@@ -493,6 +561,7 @@ function applyOverlayVisibility(playbackState) {
   setElementHidden("metricOverlayPrimaryColumn", !primaryVisible);
   setElementHidden("metricOverlaySecondaryColumn", !secondaryVisible);
   setElementHidden("metricOverlay", !(primaryVisible || secondaryVisible));
+  applyOverlayLayout();
 
   // F-66: redraw the map inset immediately after visibility is applied so the canvas is never blank
   // when the user toggles it on while playback is paused.
@@ -5526,11 +5595,13 @@ function applyRendererSettings(viewer, playbackState, settings, options = {}) {
         settings.width / OVERLAY_REFERENCE_WIDTH,
         settings.height / OVERLAY_REFERENCE_HEIGHT,
       );
-      overlayRoot.style.setProperty("--overlay-scale", String(overlayScale));
+      // Set on the root so both the metric overlay and the map inset (siblings) inherit it.
+      document.documentElement.style.setProperty("--overlay-scale", String(overlayScale));
     } else {
-      overlayRoot.style.removeProperty("--overlay-scale");
+      document.documentElement.style.removeProperty("--overlay-scale");
     }
   }
+  applyOverlayLayout();
   // end F-73
 
   if (options.resetCameraSmoothing) {
@@ -6101,5 +6172,10 @@ async function initializeApp() {
 }
 
 window.addEventListener("DOMContentLoaded", () => {
+  // Re-arrange overlays whenever the viewer frame changes size (window resize, export resolution).
+  const overlayFrame = document.getElementById("metricOverlay")?.parentElement;
+  if (overlayFrame && typeof ResizeObserver === "function") {
+    new ResizeObserver(() => applyOverlayLayout()).observe(overlayFrame);
+  }
   void initializeApp();
 });
