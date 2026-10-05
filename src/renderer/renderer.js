@@ -1085,14 +1085,17 @@ function getMediaPresentationTimeline(item, settings) {
     };
   }
 
+  // Same rule as getPhotoHoldDurationMs in shared/media-presentation.js (per-photo override first).
+  const holdDurationMs =
+    Number.isFinite(item.displayDurationMs) && item.displayDurationMs > 0
+      ? item.displayDurationMs
+      : settings.photoDisplayDurationMs;
+
   return {
     enterDurationMs: settings.enterDurationMs,
     exitDurationMs: settings.exitDurationMs,
-    holdDurationMs: settings.photoDisplayDurationMs,
-    totalDurationMs:
-      settings.enterDurationMs +
-      settings.photoDisplayDurationMs +
-      settings.exitDurationMs,
+    holdDurationMs,
+    totalDurationMs: settings.enterDurationMs + holdDurationMs + settings.exitDurationMs,
     videoCurrentTimeMs: 0,
   };
 }
@@ -1812,7 +1815,14 @@ function mergeImportedMedia(existingItems, importedItems) {
   );
 
   for (const item of importedItems) {
-    byPath.set(item.filePath, item);
+    const existing = byPath.get(item.filePath);
+    // Re-importing a photo keeps the duration it was given in the timeline.
+    byPath.set(
+      item.filePath,
+      Number.isFinite(existing?.displayDurationMs)
+        ? { ...item, displayDurationMs: existing.displayDurationMs }
+        : item,
+    );
   }
 
   return Array.from(byPath.values());
@@ -4128,6 +4138,9 @@ function setupCameraMovesControls(viewer, playbackState) {
 }
 // end F-15
 
+// Shortest hold a photo can be given by resizing it in the timeline.
+const MIN_PHOTO_HOLD_MS = 500;
+
 // Timeline editor: everything the widget displays, derived from playback + media state.
 function buildTimelineModel(playbackState) {
   const trackLoaded = hasTrack(playbackState);
@@ -4155,6 +4168,8 @@ function buildTimelineModel(playbackState) {
         ? item.alignmentStatus
         : null;
     const offsetSeconds = item.appliedAlignmentOffsetSeconds ?? 0;
+    const isPhoto = item.mediaType !== "video";
+    const hasCustomDuration = isPhoto && Number.isFinite(item.displayDurationMs);
 
     media.push({
       id: item.id,
@@ -4165,11 +4180,21 @@ function buildTimelineModel(playbackState) {
       end: start + durationMs,
       outOfRange,
       offsetSeconds,
+      // Photos can be resized: the block width is enter + hold + exit, only the hold changes.
+      resizable: isPhoto,
+      minDurationMs: settings.enterDurationMs + settings.exitDurationMs + MIN_PHOTO_HOLD_MS,
+      customDuration: hasCustomDuration,
       tooltip: [
         item.fileName,
         `${formatTimestamp(timestamp)}${offsetSeconds !== 0 ? ` (offset ${formatSignedOffsetSeconds(offsetSeconds)}, ${item.appliedAlignmentOffsetSource})` : ""}`,
+        isPhoto
+          ? `On screen ${Math.round(presentation.holdDurationMs / 100) / 10}s${hasCustomDuration ? "" : " (default)"}`
+          : null,
         outOfRange ? formatMediaAlignmentStatus(item.alignmentStatus) : null,
         "Drag to adjust its time · double-click to reset the per-media offset",
+        isPhoto
+          ? "Drag the right edge to change its time on screen · double-click the edge to reset"
+          : null,
       ]
         .filter(Boolean)
         .join("\n"),
@@ -4264,6 +4289,25 @@ function setupTimelineEditor(viewer, playbackState) {
       onMediaReset: (mediaId) => {
         updateMediaOffset(mediaId, 0);
         applyMediaAlignmentToLibrary(playbackState);
+        refreshMediaLibraryPresentation(viewer, playbackState);
+      },
+      // Resizing a photo block sets its own hold time (block = enter + hold + exit); null resets it
+      // to the global photo duration.
+      onMediaDurationCommit: (mediaId, totalDurationMs) => {
+        const item = mediaLibraryState.items.find((candidate) => candidate.id === mediaId);
+
+        if (!item || item.mediaType === "video") {
+          return;
+        }
+
+        if (totalDurationMs === null) {
+          item.displayDurationMs = null;
+        } else {
+          const settings = readMediaPresentationSettings();
+          const holdMs = totalDurationMs - settings.enterDurationMs - settings.exitDurationMs;
+          item.displayDurationMs = Math.max(MIN_PHOTO_HOLD_MS, Math.round(holdMs / 100) * 100);
+        }
+
         refreshMediaLibraryPresentation(viewer, playbackState);
       },
       onMoveSelect: (moveId) => selectCameraMove(playbackState, moveId),
@@ -5268,6 +5312,7 @@ function restoreProjectState(viewer, playbackState, loadResult) {
       id: saved.id ?? item.id,
       alignedActivityTimestamp: saved.alignedActivityTimestamp,
       alignmentStatus: saved.alignmentStatus,
+      displayDurationMs: saved.displayDurationMs ?? null,
     };
   });
   mediaLibraryState.items = restoredItems;

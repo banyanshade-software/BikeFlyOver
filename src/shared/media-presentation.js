@@ -135,6 +135,14 @@ function getMediaDurationMs(item) {
   return 0;
 }
 
+// A photo's on-screen hold time: its own displayDurationMs (set by resizing it in the timeline) when
+// present, otherwise the global photoDisplayDurationMs setting.
+function getPhotoHoldDurationMs(item, settings) {
+  return Number.isFinite(item?.displayDurationMs) && item.displayDurationMs > 0
+    ? item.displayDurationMs
+    : settings.photoDisplayDurationMs;
+}
+
 function getMediaPresentationTimeline(item, settings) {
   if (!item || !Number.isFinite(item.alignedActivityTimestamp)) {
     return null;
@@ -159,15 +167,14 @@ function getMediaPresentationTimeline(item, settings) {
     };
   }
 
+  const holdDurationMs = getPhotoHoldDurationMs(item, settings);
+
   return {
     activityAdvanceMs: 0,
     enterDurationMs: settings.enterDurationMs,
     exitDurationMs: settings.exitDurationMs,
-    holdDurationMs: settings.photoDisplayDurationMs,
-    totalDurationMs:
-      settings.enterDurationMs +
-      settings.photoDisplayDurationMs +
-      settings.exitDurationMs,
+    holdDurationMs,
+    totalDurationMs: settings.enterDurationMs + holdDurationMs + settings.exitDurationMs,
   };
 }
 
@@ -330,5 +337,6 @@ module.exports = {
   getMediaDurationMs,
   getMediaPresentationTimeline,
   getMediaPresentationWindow,
+  getPhotoHoldDurationMs,
   normalizeMediaPresentationSettings,
 };

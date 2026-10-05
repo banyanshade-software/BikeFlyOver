@@ -205,3 +205,27 @@ test("adaptive-speed export caps each stop or pause at 0.1 s of video", () => {
     1_830_000,
   );
 });
+
+test("a photo's own displayDurationMs overrides the global photo duration in the export timeline", () => {
+  const photo = (id, extra = {}) => ({
+    id,
+    mediaType: "image",
+    alignedActivityTimestamp: 5_000,
+    ...extra,
+  });
+  const settings = {
+    enterDurationMs: 500,
+    exitDurationMs: 500,
+    fps: 10,
+    photoDisplayDurationMs: 3_000,
+    speedMultiplier: 1,
+    timingMode: "proportional",
+  };
+  const photoSegmentMs = (mediaItem) =>
+    buildExportTimeline({ mediaItems: [mediaItem], settings, trackpoints }).segments.find(
+      (segment) => segment.kind === "photo" || segment.mediaItemId === mediaItem.id,
+    ).videoDurationMs;
+
+  assert.equal(photoSegmentMs(photo("default")), 4_000);
+  assert.equal(photoSegmentMs(photo("custom", { displayDurationMs: 8_000 })), 9_000);
+});

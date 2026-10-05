@@ -57,6 +57,8 @@ function normalizePersistedMediaItem(rawItem = {}) {
     filePath: normalizeOptionalString(rawItem.filePath),
     id: normalizeOptionalString(rawItem.id),
     mediaDurationMs: normalizeOptionalFiniteNumber(rawItem.mediaDurationMs),
+    // Per-photo hold duration set from the timeline; null = use the global photo duration.
+    displayDurationMs: normalizeOptionalFiniteNumber(rawItem.displayDurationMs),
     mediaType: normalizeMediaType(rawItem.mediaType),
     nearestTrackIndex: Number.isInteger(rawItem.nearestTrackIndex)
       ? rawItem.nearestTrackIndex

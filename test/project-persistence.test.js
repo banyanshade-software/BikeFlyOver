@@ -122,3 +122,17 @@ test("normalizeProjectState clamps non-finite values in mediaAlignmentOffsets to
   });
 });
 // end F-33
+
+test("persisted media items keep a photo's own on-screen duration", () => {
+  const { normalizePersistedMediaItem } = require("../src/shared/project-state");
+
+  assert.equal(
+    normalizePersistedMediaItem({ filePath: "/tmp/a.jpg", displayDurationMs: 7_500 })
+      .displayDurationMs,
+    7_500,
+  );
+  assert.equal(
+    normalizePersistedMediaItem({ filePath: "/tmp/b.jpg" }).displayDurationMs,
+    null,
+  );
+});

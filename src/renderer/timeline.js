@@ -1,8 +1,9 @@
 // Timeline editor: horizontal timeline docked at the bottom of the window. It shows the ruler
 // (with the selected playback range), the altitude profile, imported media and the camera moves
-// on one shared activity-time axis. Media and camera moves can be dragged; camera moves can also
-// be resized, added and deleted. The widget owns no project state: it reads a model through
-// getModel() and reports edits through callbacks, so renderer.js stays the single source of truth.
+// on one shared activity-time axis. Media and camera moves can be dragged; photos and camera moves
+// can be resized (photo: time on screen); camera moves can also be added and deleted. The widget
+// owns no project state: it reads a model through getModel() and reports edits through callbacks,
+// so renderer.js stays the single source of truth.
 (function () {
   const DRAG_THRESHOLD_PX = 3;
   const SNAP_THRESHOLD_PX = 8;
@@ -282,15 +283,39 @@
       const label = document.createElement("span");
       label.className = "tl-media-label";
       node.append(thumb, label);
+
+      if (item.resizable) {
+        const handle = document.createElement("div");
+        handle.className = "tl-media-resize";
+        handle.title = "Drag to change the time on screen · double-click to reset";
+        node.append(handle);
+      }
+
       return node;
     }
 
+    function getMediaDisplayWindow(item) {
+      const drag = state.drag;
+
+      if (drag?.kind === "media" && drag.id === item.id && drag.moved) {
+        return { start: drag.currentStart, end: drag.currentStart + (item.end - item.start) };
+      }
+
+      if (drag?.kind === "media-resize" && drag.id === item.id && drag.moved) {
+        return { start: item.start, end: drag.currentEnd };
+      }
+
+      return { start: item.start, end: item.end };
+    }
+
     function renderMedia(model) {
+      const windows = new Map(model.media.map((item) => [item.id, getMediaDisplayWindow(item)]));
       const { rowById, rowCount } = layout.packIntoRows(
         model.media.map((item) => {
+          const extent = windows.get(item.id);
           // Pack by on-screen extent so tiny photo blocks (min width) do not overlap.
-          const minEnd = item.start + MIN_BLOCK_WIDTH_PX * msPerPx();
-          return { id: item.id, start: item.start, end: Math.max(item.end, minEnd) };
+          const minEnd = extent.start + MIN_BLOCK_WIDTH_PX * msPerPx();
+          return { id: item.id, start: extent.start, end: Math.max(extent.end, minEnd) };
         }),
         { maxRows: MEDIA_MAX_ROWS },
       );
@@ -309,14 +334,14 @@
 
       for (const item of model.media) {
         const node = mediaElements.get(item.id);
-        const isDragged = state.drag?.kind === "media" && state.drag.id === item.id && state.drag.moved;
-        const start = isDragged ? state.drag.currentStart : item.start;
-        placeBlock(node, start, start + (item.end - item.start), rowById.get(item.id) ?? 0, MEDIA_ROW_HEIGHT_PX);
+        const extent = windows.get(item.id);
+        placeBlock(node, extent.start, extent.end, rowById.get(item.id) ?? 0, MEDIA_ROW_HEIGHT_PX);
         node.classList.toggle("tl-media--video", item.kind === "video");
         node.classList.toggle("tl-media--selected", item.id === model.selectedMediaId);
         node.classList.toggle("tl-media--out", Boolean(item.outOfRange));
         node.classList.toggle("tl-media--active", item.id === model.activeMediaId);
         node.classList.toggle("tl-media--shifted", item.offsetSeconds !== 0);
+        node.classList.toggle("tl-media--custom-duration", Boolean(item.customDuration));
         const thumb = node.firstChild;
         const thumbUrl = item.thumbUrl ? `url("${item.thumbUrl}")` : "";
         if (thumb.dataset.url !== thumbUrl) {
@@ -510,6 +535,7 @@
       state.lastPointerDownTarget = target;
       const rangeHandle = target.closest(".tl-range-handle");
       const resizeHandle = target.closest(".tl-move-resize");
+      const mediaResizeHandle = target.closest(".tl-media-resize");
       const moveNode = target.closest(".tl-move");
       const mediaNode = target.closest(".tl-media");
 
@@ -530,6 +556,13 @@
         const move = model.moves.find((candidate) => candidate.id === moveNode.dataset.moveId);
         callbacks.onMoveSelect?.(move.id);
         startDrag(event, { kind: "move", id: move.id, origin: move, currentStart: move.start });
+        return;
+      }
+
+      if (mediaResizeHandle && mediaNode) {
+        const item = model.media.find((candidate) => candidate.id === mediaNode.dataset.mediaId);
+        callbacks.onMediaSelect?.(item.id);
+        startDrag(event, { kind: "media-resize", id: item.id, origin: item, currentEnd: item.end });
         return;
       }
 
@@ -598,6 +631,17 @@
         return;
       }
 
+      if (drag.kind === "media-resize") {
+        const end = snap(drag.origin.end + dx * msPerPx(), event, drag.id);
+        drag.currentEnd = Math.max(drag.origin.start + drag.origin.minDurationMs, end);
+        showDragTip(
+          event.clientX,
+          `${Math.round((drag.currentEnd - drag.origin.start) / 100) / 10}s`,
+        );
+        render();
+        return;
+      }
+
       if (drag.kind === "resize") {
         const end = snap(drag.origin.end + dx * msPerPx(), event, drag.id);
         drag.currentEnd = Math.min(
@@ -640,6 +684,8 @@
 
       if (drag.kind === "media") {
         callbacks.onMediaCommit?.(drag.id, drag.currentStart);
+      } else if (drag.kind === "media-resize") {
+        callbacks.onMediaDurationCommit?.(drag.id, drag.currentEnd - drag.origin.start);
       } else if (drag.kind === "move") {
         callbacks.onMoveCommit?.(drag.id, {
           start: drag.currentStart,
@@ -680,6 +726,11 @@
 
       const target = state.lastPointerDownTarget ?? event.target;
       const mediaNode = target.closest(".tl-media");
+
+      if (mediaNode && target.closest(".tl-media-resize")) {
+        callbacks.onMediaDurationCommit?.(mediaNode.dataset.mediaId, null);
+        return;
+      }
 
       if (mediaNode) {
         callbacks.onMediaReset?.(mediaNode.dataset.mediaId);

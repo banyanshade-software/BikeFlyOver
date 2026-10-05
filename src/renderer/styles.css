@@ -1324,6 +1324,11 @@ body {
   border-style: dashed;
 }
 
+/* Photo with its own on-screen duration (not the global default). */
+.tl-media--custom-duration .tl-media-resize {
+  background: rgba(121, 189, 255, 0.55);
+}
+
 .tl-media--out {
   border-color: #f5a623;
   background-image: repeating-linear-gradient(
@@ -1357,7 +1362,9 @@ body {
   background: #7a3b8c;
 }
 
-.tl-move-resize {
+/* Photo blocks: right-edge handle to change the time on screen (same look as camera moves). */
+.tl-move-resize,
+.tl-media-resize {
   position: absolute;
   top: 0;
   right: 0;
